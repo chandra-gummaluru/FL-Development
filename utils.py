@@ -1,4 +1,9 @@
-import threading
+import time, sys, threading, errno
+import socket
+import queue
+import pickle
+
+DEBUG = False
 
 class StoppableThread(threading.Thread):
 
@@ -11,3 +16,128 @@ class StoppableThread(threading.Thread):
 
     def isStopped(self):
         return self._stop.isSet()
+
+
+# A generic communication handler.
+class Comm_Handler():
+    def __init__(self, peer):
+        # threads for sending and receiving messages.
+        self.sender_thread = StoppableThread(target=self.send, daemon=True)
+        self.receiver_thread = StoppableThread(target=self.receive, daemon=True)
+
+        # Peer connection
+        self.peer_sock, self.peer_addr = peer
+
+        # queues for storing messages to send and receive.
+        # incoming messages from the peer.
+        self.in_queue = queue.Queue(1)
+        self.in_lock = threading.Lock()
+
+        # outgoing messages to the peer.
+        self.out_queue = queue.Queue(1)
+        self.out_lock = threading.Lock()
+
+        # indicates whether the handler had an error.
+        self.error = False
+
+    # starts the handler.
+    def start(self):
+        self.sender_thread.start()
+        self.receiver_thread.start()
+
+    # stops the handler.
+    def stop(self):
+        self.sender_thread.stop()
+        self.receiver_thread.stop()
+
+        # close the peer socket.
+        self.peer_sock.close()
+
+    # Checks if communication has stopped
+    def isStopped(self):
+        return self.receiver_thread.isStopped() or self.sender_thread.isStopped()
+
+    # callback to receive messages.
+    def receive(self):
+        # holds the message size for data to be received eventually.
+        smsg_size = None
+
+        while not self.receiver_thread.isStopped():
+            try:
+                # Wait for data from peer
+                if smsg_size == None:
+                    # receive the message size.
+                    smsg_size = int.from_bytes(self.peer_sock.recv(8), 'big')
+                    continue
+                else:
+                    # receive the message.
+                    msg = pickle.loads(self.peer_sock.recv(smsg_size))
+                    smsg_size = None
+            except socket.error as e:
+                if e.args[0] in [ errno.EAGAIN, errno.EWOULDBLOCK ]:
+                    # No data received (yet)
+                    continue
+                else:
+                    # Remove broken peer + end thread (by exiting)
+                    print('Peer {}: receive error {}'.format(self.peer_addr, e))
+                    self.error = True
+                    self.stop()
+                    return
+            else:
+                # Only accept messages if the queue is not full.
+                with self.in_lock:
+                    if self.in_queue.full():
+                        continue
+
+                    # Queue message received from peer
+                    self.in_queue.put(msg)
+                    if DEBUG:
+                        print('<{}> {}'.format(self.peer_addr, msg))
+
+    # Determine if peer has an update/message
+    def has_message(self):
+        with self.in_lock:
+            return not self.in_queue.empty()
+
+    # Retrieve message
+    def get_message(self):
+        if self.in_queue.empty():
+            return None
+
+        with self.in_lock:
+            msg = self.in_queue.get()
+
+        return msg
+
+    # callback to send messages.
+    def send(self):
+        while not self.sender_thread.isStopped():
+            # Check there is a message to send
+            if self.out_queue.empty():
+                continue
+
+            # Send queued message to peer
+            with self.out_lock:
+                msg = self.out_queue.get()
+
+                try:
+                    # serialize the message and determine its size.
+                    smsg = pickle.dumps(msg)
+                    smsg_size = (len(smsg)).to_bytes(8, byteorder='big')
+                    # send the size.
+                    self.peer_sock.sendall(smsg_size)
+                    # send the actual message.
+                    self.peer_sock.sendall(smsg)
+                except:
+                    print('Peer {}: Send Error \'{}\''.format(self.peer_addr, sys.exc_info()[0]))
+                    self.error = True
+                    self.stop()
+                    return
+
+    # Put message to send
+    def queue_message(self, msg):
+        with self.out_lock:
+            if self.out_queue.full():
+                return
+
+            self.out_queue.put(msg)
