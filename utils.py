@@ -22,8 +22,8 @@ class StoppableThread(threading.Thread):
 class Comm_Handler():
     def __init__(self, peer):
         # threads for sending and receiving messages.
-        self.sender_thread = StoppableThread(target=self.send, daemon=True)
-        self.receiver_thread = StoppableThread(target=self.receive, daemon=True)
+        self.sender_thread = None
+        self.receiver_thread = None
 
         # Peer connection
         self.peer_sock, self.peer_addr = peer
@@ -42,8 +42,17 @@ class Comm_Handler():
 
     # starts the handler.
     def start(self):
+        self.sender_thread = StoppableThread(target=self.send, daemon=True)
+        self.receiver_thread = StoppableThread(target=self.receive, daemon=True)
+
         self.sender_thread.start()
         self.receiver_thread.start()
+
+    # TODO: how to deal with pause() vs stop()
+    # pauses the handler.
+    def pause(self):
+        self.sender_thread.stop()
+        self.receiver_thread.stop()
 
     # stops the handler.
     def stop(self):

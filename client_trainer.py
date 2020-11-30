@@ -69,6 +69,8 @@ class ClientTrainer():
 
         start = time.time()
         
+        print('Started Training')
+
         for epoch in range(self.num_epochs):
             running_loss = 0.0
             
@@ -101,7 +103,7 @@ class ClientTrainer():
                     running_loss = 0.0
                         
         end = time.time()
-        print('Done Training')
+        print('Finished Training')
         print('%0.2f minutes' %((end - start) / 60))
 
         # Save train/test accuracy after training

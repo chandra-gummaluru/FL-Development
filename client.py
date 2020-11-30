@@ -48,16 +48,20 @@ class FLClient(Client):
             # Get message
             weights = self.comm_handler.get_message()
 
+            # sleep communication
+            self.comm_handler.pause()
+
             # Load weights
             self.trainer.load_weights(weights)
 
-            print("starting to train")
             # Train model
             self.trainer.train()
-            print("done training")
 
             # Compute focused update
             update = self.trainer.focused_update()
+
+            # start communication
+            self.comm_handler.start()
 
             # Send update to the server
             self.comm_handler.queue_message(update)
@@ -66,7 +70,9 @@ class FLClient(Client):
 ### Main Code ###
 
 TIMEOUT = 5 # seconds
-SERVER = (socket.gethostname(), 8080)
+
+#SERVER = (socket.gethostname(), 8080)
+SERVER = ('192.168.2.26', 12050)
 
 if __name__ == '__main__':
 

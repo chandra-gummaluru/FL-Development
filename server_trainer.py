@@ -7,6 +7,8 @@ import csv
 
 import model1
 
+DEBUG = True
+
 # Class encapsulating Training program for the Server's model
 class ServerTrainer():
     def __init__(self, use_cuda=True):
@@ -45,6 +47,9 @@ class ServerTrainer():
 
         # Compute Accuracy (test)
         self.test_acc.append(self.compute_accuracy(self.test_loader))
+
+        if DEBUG:
+            print('(iteration, accuracy): ({}, {})'.format(len(self.test_acc), self.test_acc[-1]))
 
         # Occasionally save current test accuracy
         if len(self.test_acc) - 1 % 5 == 0:
