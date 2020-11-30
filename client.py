@@ -2,6 +2,7 @@ import time, sys, threading, errno
 import socket
 import utils
 
+import client_trainer
 
 class Client():
     def __init__(self, server):
@@ -50,8 +51,10 @@ class FLClient(Client):
             # Load weights
             self.trainer.load_weights(weights)
 
+            print("starting to train")
             # Train model
             self.trainer.train()
+            print("done training")
 
             # Compute focused update
             update = self.trainer.focused_update()
@@ -61,18 +64,18 @@ class FLClient(Client):
 
 
 # TEMP CLASS FOR TEST TRAIN
-class ClientTrainer():
-    def __init__(self):
-        self.model = 'Client Model'
+# class ClientTrainer():
+#     def __init__(self):
+#         self.model = 'Client Model'
     
-    def load_weights(self, weights):
-        pass
+#     def load_weights(self, weights):
+#         pass
 
-    def train(self):
-        pass
+#     def train(self):
+#         pass
 
-    def focused_update(self):
-        return 'Client Update:'
+#     def focused_update(self):
+#         return 'Client Update:'
 
 ### Main Code ###
 
@@ -81,8 +84,12 @@ SERVER = (socket.gethostname(), 8080)
 
 if __name__ == '__main__':
 
-    # Thread Client receive
-    client = FLClient(SERVER, ClientTrainer())
+    # Get client index from command line
+    idx = int(sys.argv[1])
+    nums = [[0, 1, 2], [3, 4, 5], [6, 7, 8, 9]]
+
+    # Instantiate FL client with Training program
+    client = FLClient(SERVER, client_trainer.ClientTrainer(nums[idx]))
 
     # Retry to connect to the server
     start = time.time()

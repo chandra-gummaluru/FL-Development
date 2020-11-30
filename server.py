@@ -7,9 +7,8 @@ import pickle
 import utils
 from random import sample
 
-# the socket for the server.
-server_hostname = socket.gethostname()
-server_port = 8080
+import server_trainer
+
 
 class Server():
     def __init__(self, host):
@@ -75,7 +74,7 @@ class Server():
 
 class FLServer(Server):
 
-    def __init__(self, host):
+    def __init__(self, host, trainer):
         super(FLServer, self).__init__(host)
 
         # Client selected for FL
@@ -86,10 +85,8 @@ class FLServer(Server):
         self.broadcasted = False
 
         # TODO: Encapsulate these in a class.
-        # FL Model Hyperparameters
-        self.model = "model"
-        self.aggregator = lambda updates: updates[0]    # Default
-        self.update_rule = lambda model, update: None
+        # FL Model trainer
+        self.trainer = trainer
         self.subset_size = 2 # Default
 
     # Executes FL Training Loop
@@ -130,7 +127,7 @@ class FLServer(Server):
     def broadcast_model(self):
         # Verify there are clients
         if len(self.client_subset) > 0:
-            self.broadcast(self.client_subset, self.model)
+            self.broadcast(self.client_subset, self.trainer.model.state_dict())
 
             return True
 
@@ -167,11 +164,11 @@ class FLServer(Server):
             return None
 
         # Aggregate the updates.
-        return self.aggregator(self.get_updates())
+        return self.trainer.aggregate(self.get_updates())
 
     # Update server model (centralized model)
     def update_model(self, aggregated_update):
-        self.update_rule(self.model, aggregated_update)
+        self.trainer.update(aggregated_update)
 
     ## Helper Functions ###
 
@@ -190,8 +187,12 @@ class FLServer(Server):
 BUFFER_TIME = 5
 
 if __name__ == '__main__':
+    # the socket for the server.
+    server_hostname = socket.gethostname()
+    server_port = 8080
+
     # Initialize the FL server.
-    flServer = FLServer((server_hostname, server_port))
+    flServer = FLServer((server_hostname, server_port),  server_trainer.ServerTrainer())
 
     # Allow client to connect
     flServer.start()

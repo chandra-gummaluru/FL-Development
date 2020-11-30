@@ -4,3 +4,7 @@ __pycache__/
 
 # VSCode
 .vscode
+
+# Data
+data/
+train_curves/
