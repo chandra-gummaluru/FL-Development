@@ -63,20 +63,6 @@ class FLClient(Client):
             self.comm_handler.queue_message(update)
 
 
-# TEMP CLASS FOR TEST TRAIN
-# class ClientTrainer():
-#     def __init__(self):
-#         self.model = 'Client Model'
-    
-#     def load_weights(self, weights):
-#         pass
-
-#     def train(self):
-#         pass
-
-#     def focused_update(self):
-#         return 'Client Update:'
-
 ### Main Code ###
 
 TIMEOUT = 5 # seconds
