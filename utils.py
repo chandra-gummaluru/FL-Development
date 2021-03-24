@@ -68,6 +68,8 @@ class Comm_Handler():
 
     # callback to receive messages.
     def receive(self):
+        #print('Thread ID (receive):', threading.get_ident())
+
         # holds the message size for data to be received eventually.
         smsg_size = None
 
@@ -120,6 +122,8 @@ class Comm_Handler():
 
     # callback to send messages.
     def send(self):
+        #print('Thread ID (send):', threading.get_ident())
+
         while not self.sender_thread.isStopped():
             # Check there is a message to send
             if self.out_queue.empty():

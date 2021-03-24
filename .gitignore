@@ -8,3 +8,6 @@ __pycache__/
 # Data
 data/
 train_curves/
+
+# Plotter
+plotter.py

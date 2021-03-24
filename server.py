@@ -17,15 +17,28 @@ class Server():
         self.s.bind(host)
 
         # Threads
-        self.listener_thread = utils.StoppableThread(target=self.listener, daemon=True)
-        
+        self.listener_thread = None
+
         # a dictionary of client communication handlers indexed by client address.
         self.client_comm_handlers = {}
         self.client_lock = threading.Lock()
 
     # Starts listener thread to add connected clients.
     def start(self):
+        self.listener_thread = utils.StoppableThread(target=self.listener, daemon=True)
         self.listener_thread.start()
+
+        with self.client_lock:
+            for comm_handler in self.client_comm_handlers.values():
+                comm_handler.start()
+
+
+    def pause(self):
+        self.listener_thread.stop()
+
+        with self.client_lock:
+            for comm_handler in self.client_comm_handlers.values():
+                comm_handler.pause()
 
     # Connects to the clients (and cache them).
     def listener(self):
@@ -87,7 +100,7 @@ class FLServer(Server):
         # TODO: Encapsulate these in a class.
         # FL Model trainer
         self.trainer = trainer
-        self.subset_size = 2 # Default
+        self.subset_size = 3 # Default
 
     # Executes FL Training Loop
     def train(self):
@@ -103,12 +116,18 @@ class FLServer(Server):
 
             # if an aggregated update has been created...
             if self.aggregated_update is not None:
+                # Pause communication
+                self.pause()
+
                 # Update the model using aggregated update.
                 self.update_model(self.aggregated_update)
                 self.aggregated_update = None
 
                 # Reset client subset (to be re-selected)
                 self.client_subset = []
+
+                # Restart communication
+                self.start()
 
             # Broadcast to Client Subset
             # NOTE: if client subset empty, broadcast will return False
@@ -184,7 +203,7 @@ class FLServer(Server):
 
 ### Main Code ###
 
-BUFFER_TIME = 5
+BUFFER_TIME = 20
 
 if __name__ == '__main__':
     # the socket for the server.

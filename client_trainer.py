@@ -16,7 +16,7 @@ DEBUG = True
 class ClientTrainer():
     def __init__(self, local_client_digits, use_cuda=True):
         # Hyperparameters
-        self.num_epochs = 1
+        self.num_epochs = 2
         self.lr = 1e-3
         self.momentum = 0.9
         self.batch_size = 164    #4
@@ -35,14 +35,14 @@ class ClientTrainer():
 
         train_set.data = train_set.data[indices]
         train_set.targets = train_set.targets[indices]
-        self.batch_size = len(train_set.targets) #TEMPORARY
+
         # Wrap in DataLoader
         self.train_loader = DataLoader(train_set, batch_size=self.batch_size, shuffle=True)
-        self.test_loader = DataLoader(test_set, batch_size=self.batch_size, shuffle=False)
-        
+        self.test_loader = DataLoader(test_set, batch_size=len(test_set.targets), shuffle=False)
+
         # Instantiate model
         self.model = model1.Net()
-        
+
         # Train/Test Curves
         self.train_acc = [ ['0', '1', '2', '3', '4', '5', '6', '7', '8', '9'] ]
         self.test_acc = [ ['0', '1', '2', '3', '4', '5', '6', '7', '8', '9'] ]
@@ -68,12 +68,12 @@ class ClientTrainer():
         optimizer = torch.optim.SGD(self.model.parameters(), lr=self.lr, momentum=self.momentum)
 
         start = time.time()
-        
+
         print('Started Training')
 
         for epoch in range(self.num_epochs):
             running_loss = 0.0
-            
+
             for i, (inputs, targets) in enumerate(self.train_loader):
                 # Enable CUDA
                 if self.use_cuda and torch.cuda.is_available():
@@ -91,17 +91,21 @@ class ClientTrainer():
 
                 # Accumulate the loss
                 running_loss += loss.item()
-                
-                if True:#i % 10 == 1:  # every 10 batches
-                    # Compute accuracy
-                    self.train_acc.append(self.evaluate_accuracy(self.train_loader))
-                    self.test_acc.append(self.evaluate_accuracy(self.test_loader))
 
-                    # Print loss
-                    if DEBUG:
-                        print('[Epoch %d, %5d Mini Batches] loss: %.3f' % (epoch + 1, i + 1, running_loss / (10 * self.batch_size)))
-                    running_loss = 0.0
-                        
+                # if i % 10 == 0:  # every 10 batches
+                #     # Compute accuracy
+                #     self.train_acc.append(self.evaluate_accuracy(self.train_loader))
+                #     self.test_acc.append(self.evaluate_accuracy(self.test_loader))
+
+                #     # Print loss
+                #     if DEBUG:
+                #         print('[Epoch %d, Batch Number %5d] loss: %.3f' % (epoch + 1, i + 1, running_loss / (10 * self.batch_size)))
+                #     running_loss = 0.0
+
+            print('Epoch:', epoch + 1)
+            self.train_acc.append(self.evaluate_accuracy(self.train_loader))
+            self.test_acc.append(self.evaluate_accuracy(self.test_loader))
+
         end = time.time()
         print('Finished Training')
         print('%0.2f minutes' %((end - start) / 60))
@@ -109,7 +113,7 @@ class ClientTrainer():
         # Save train/test accuracy after training
         self.save_to_csv(self.train_acc, './train_curves/client{}_train.csv'.format(self.digits))
         self.save_to_csv(self.test_acc, './train_curves/client{}_test.csv'.format(self.digits))
-    
+
     ### Helper Functions ###
 
     def evaluate_accuracy(self, data_loader):
@@ -129,11 +133,11 @@ class ClientTrainer():
                 targets = targets.cuda()
 
             # Compute predictions
-            with torch.no_grad():    
+            with torch.no_grad():
                 outputs = self.model(inputs)
-            
+
             preds = outputs.max(1, keepdim=True)[1]
-            
+
             # determine the number correct per class.
             labels, counts = torch.unique(targets[(preds.squeeze() == targets).nonzero()], return_counts=True)
             correct_by_class[labels] += counts.float()
@@ -141,14 +145,14 @@ class ClientTrainer():
             # determine the number per class.
             labels, counts = torch.unique(targets, return_counts=True)
             total_by_class[labels] += counts.float()
-        
+
         total_by_class[(total_by_class == 0).nonzero()] = 1.0 # TODO: Change this to be an NaN.
 
         if DEBUG:
             print('Total Accuracy: %0.3f %%' % (100 * correct_by_class.sum() / total_by_class.sum()))
-    
+
         return (correct_by_class / total_by_class).cpu().tolist()
-    
+
     # Save data to CSV file
     def save_to_csv(self, data, file_path):
         with open(file_path, 'w+', newline='') as csv_file:
@@ -158,7 +162,7 @@ class ClientTrainer():
 
 # TEST
 if __name__ == '__main__':
-    
+
     trainer = ClientTrainer([1, 2, 3], use_cuda=True)
     trainer.load_weights(trainer.model.state_dict())
     print('Weights loaded successfully!')

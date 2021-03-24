@@ -69,16 +69,16 @@ class FLClient(Client):
 
 ### Main Code ###
 
-TIMEOUT = 5 # seconds
+TIMEOUT = 10 # seconds
 
-#SERVER = (socket.gethostname(), 8080)
-SERVER = ('192.168.2.26', 12050)
+SERVER = (socket.gethostname(), 8080)
+#SERVER = ('192.168.2.26', 12050)   # TODO: pickle message gets truncated over local network
 
 if __name__ == '__main__':
 
     # Get client index from command line
     idx = int(sys.argv[1])
-    nums = [[0, 1, 2], [3, 4, 5], [6, 7, 8, 9]]
+    nums = [[3, 5, 7, 9], [0, 1, 8], [2, 4, 6]]
 
     # Instantiate FL client with Training program
     client = FLClient(SERVER, client_trainer.ClientTrainer(nums[idx]))
