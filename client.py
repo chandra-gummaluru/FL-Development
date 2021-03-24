@@ -71,7 +71,7 @@ class FLClient(Client):
 
 TIMEOUT = 10 # seconds
 
-SERVER = (socket.gethostname(), 8080)
+SERVER = (socket.gethostbyname('localhost'), 8080)
 #SERVER = ('192.168.2.26', 12050)   # TODO: pickle message gets truncated over local network
 
 if __name__ == '__main__':
