@@ -3,7 +3,7 @@ import socket
 import queue
 import pickle
 
-DEBUG = False
+DEBUG = True
 
 class StoppableThread(threading.Thread):
 
@@ -71,19 +71,22 @@ class Comm_Handler():
         #print('Thread ID (receive):', threading.get_ident())
 
         # holds the message size for data to be received eventually.
-        smsg_size = None
+        nt = None
 
         while not self.receiver_thread.isStopped():
             try:
                 # Wait for data from peer
-                if smsg_size == None:
+                if nt == None:
                     # receive the message size.
-                    smsg_size = int.from_bytes(self.peer_sock.recv(8), 'big')
+                    nt = int.from_bytes(self.peer_sock.recv(8), 'big')
                     continue
                 else:
                     # receive the message.
-                    msg = pickle.loads(self.peer_sock.recv(smsg_size))
-                    smsg_size = None
+                    buff = bytes()
+                    for i in range(nt):
+                        buff += self.peer_sock.recv(MAX_BUFFER_SIZE)
+                    msg = pickle.loads(buff)
+                    nt = None
             except socket.error as e:
                 if e.args[0] in [ errno.EAGAIN, errno.EWOULDBLOCK ]:
                     # No data received (yet)
@@ -137,10 +140,19 @@ class Comm_Handler():
                     # serialize the message and determine its size.
                     smsg = pickle.dumps(msg)
                     smsg_size = (len(smsg)).to_bytes(8, byteorder='big')
+
+                    # determine the number of transmissions required.
+                    nt = int(np.ceil(len(smsg) / MAX_BUFFER_SIZE))
+
                     # send the size.
-                    self.peer_sock.sendall(smsg_size)
+                    self.peer_sock.sendall(nt.to_bytes(8, byteorder='big'))
+
                     # send the actual message.
-                    self.peer_sock.sendall(smsg)
+                    for i in range(nt) - 1:
+                        self.peer_sock.sendall(smsg[MAX_BUFFER_SIZE*i : MAX_BUFFER_SIZE * (i+1)])
+                    self.peer_sock.sendall(smsg[MAX_BUFFER_SIZE * (nt - 1):])
+
+                    #self.peer_sock.sendall(smsg)
                 except:
                     print('Peer {}: Send Error \'{}\''.format(self.peer_addr, sys.exc_info()[0]))
                     self.error = True

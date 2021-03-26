@@ -207,7 +207,7 @@ BUFFER_TIME = 20
 
 if __name__ == '__main__':
     # the socket for the server.
-    server_hostname = socket.gethostname()
+    server_hostname = socket.gethostbyname('localhost')
     server_port = 8080
 
     # Initialize the FL server.

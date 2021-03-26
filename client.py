@@ -13,7 +13,7 @@ class Client():
 
         # Communication interface
         self.comm_handler = None
-    
+
     # Attempt to connect to Server
     def connect(self):
         try:
@@ -71,7 +71,7 @@ class FLClient(Client):
 
 TIMEOUT = 10 # seconds
 
-SERVER = (socket.gethostname(), 8080)
+SERVER = (socket.gethostbyname('localhost'), 8080)
 #SERVER = ('192.168.2.26', 12050)   # TODO: pickle message gets truncated over local network
 
 if __name__ == '__main__':
@@ -85,7 +85,7 @@ if __name__ == '__main__':
 
     # Retry to connect to the server
     start = time.time()
-    
+
     print('Attempting to connect to {} - timeout ({} s)'.format(SERVER, TIMEOUT))
 
     while (time.time() - start) < TIMEOUT:
