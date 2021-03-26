@@ -7,7 +7,7 @@ import (
 	"github.com/ldsec/lattigo/v2/dckks"
 )
 
-func main() {
+func mpheSimulate() {
 	/* Initialization */
 
 	// Encryption scheme parameters
@@ -25,31 +25,31 @@ func main() {
 
 	/* Simulate MPHE iterations */
 
-	max_iters := 3
+	maxIters := 3
 
-	for i := 0 ; i < max_iters ; i++ {
+	for i := 0 ; i < maxIters ; i++ {
 		fmt.Printf("\nITERATION %d\n\n", i)
 
 		/* Server sends encrypted model to Clients */
 
-		encrypted_model := server.GetModel()
+		encryptedModel := server.GetModel()
 		crs := server.GetCRS()
 
 		/* Clients Decrypt + Train */
 
-		client1.TrainModel(encrypted_model, crs)
-		client2.TrainModel(encrypted_model, crs)
+		client1.TrainModel(encryptedModel, crs)
+		client2.TrainModel(encryptedModel, crs)
 
 		/* Collective Key Generation */
 
 		client1.GenKey()
 		client2.GenKey()
 
-		ckg_shares := []dckks.CKGShare{}
-		ckg_shares = append(ckg_shares, client1.GetCKGShare())
-		ckg_shares = append(ckg_shares, client2.GetCKGShare())
+		ckgShares := []dckks.CKGShare{}
+		ckgShares = append(ckgShares, client1.GetCKGShare())
+		ckgShares = append(ckgShares, client2.GetCKGShare())
 
-		cpk := server.ColKeyGen(crs, ckg_shares)
+		cpk := server.ColKeyGen(crs, ckgShares)
 
 		/* Clients send encrypted update to Server */
 
@@ -63,18 +63,22 @@ func main() {
 
 		/* Collective Key Switching */
 
-		cks_shares := []dckks.CKSShare{}
-		cks_shares = append(cks_shares, client1.GetCKSShare(aggregate))
-		cks_shares = append(cks_shares, client2.GetCKSShare(aggregate))
+		cksShares := []dckks.CKSShare{}
+		cksShares = append(cksShares, client1.GetCKSShare(aggregate))
+		cksShares = append(cksShares, client2.GetCKSShare(aggregate))
 
-		server.ColKeySwitch(aggregate, cks_shares)
+		server.ColKeySwitch(aggregate, cksShares)
 
 		/* Average updates post aggregation */
 
 		// NOTE: this assumes the averaging is just a scale of however we aggregated
-		server.Average(len(cks_shares))
+		server.Average(len(cksShares))
 
 		// DEBUG: Verify model is updated as expected
 		server.PrintCurrentModel()
 	}
+}
+
+func main() {
+	mpheSimulate()
 }
