@@ -2,8 +2,10 @@ import time, sys, threading, errno
 import socket
 import queue
 import pickle
+import math
 
 DEBUG = True
+MAX_BUFFER_SIZE = 4096
 
 class StoppableThread(threading.Thread):
 
@@ -82,7 +84,7 @@ class Comm_Handler():
                     continue
                 else:
                     # receive the message.
-                    buff = bytes()
+                    buff = bytearray()
                     for i in range(nt):
                         buff += self.peer_sock.recv(MAX_BUFFER_SIZE)
                     msg = pickle.loads(buff)
@@ -142,13 +144,13 @@ class Comm_Handler():
                     smsg_size = (len(smsg)).to_bytes(8, byteorder='big')
 
                     # determine the number of transmissions required.
-                    nt = int(np.ceil(len(smsg) / MAX_BUFFER_SIZE))
+                    nt = int(math.ceil(len(smsg) / MAX_BUFFER_SIZE))
 
                     # send the size.
                     self.peer_sock.sendall(nt.to_bytes(8, byteorder='big'))
 
                     # send the actual message.
-                    for i in range(nt) - 1:
+                    for i in range(nt - 1):
                         self.peer_sock.sendall(smsg[MAX_BUFFER_SIZE*i : MAX_BUFFER_SIZE * (i+1)])
                     self.peer_sock.sendall(smsg[MAX_BUFFER_SIZE * (nt - 1):])
 
