@@ -12,6 +12,7 @@ import server_trainer
 
 class Server():
     def __init__(self, host):
+        print('Hello from host (SERVER):', host)
         # Listening socket.
         self.s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.s.bind(host)
@@ -32,7 +33,7 @@ class Server():
             for comm_handler in self.client_comm_handlers.values():
                 comm_handler.start()
 
-
+    # Pauses communication threads
     def pause(self):
         self.listener_thread.stop()
 

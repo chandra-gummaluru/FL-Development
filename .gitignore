@@ -2,8 +2,9 @@
 __pycache__/
 *.pyc
 
-# VSCode
+# Workspacec
 .vscode
+venv
 
 # Data
 data/
