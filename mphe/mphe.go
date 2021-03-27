@@ -11,7 +11,7 @@ func mpheSimulate() {
 	/* Initialization */
 
 	// Encryption scheme parameters
-	params := ckks.DefaultParams[ckks.PN14QP438]
+	params := ckks.DefaultParams[ckks.PN12QP109]
 
 	// Initialize Server
 	server := parties.NewServer(params, complex(0.0, 0.0))

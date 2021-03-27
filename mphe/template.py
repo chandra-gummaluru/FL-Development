@@ -13,27 +13,40 @@ class Poly:
     def __init__(self):
         self.coeffs = [ [] ]    # [][]uint64
 
+class PolyPair:
+    def __init__(self):
+        self.p0 = Poly()
+        self.p1 = Poly()
+
 class Ciphertext:
     def __init__(self):
         self.value = []     # []Poly()
         self.scale = 0.0
         self.isNTT = False
 
+class Data:
+    def __init__(self):
+        self.data = []  # []Ciphertext
+
+class Share:
+    def __init__(self):
+        self.data = []  # []Poly
+
 class MPHEServer:
     def __init__(self):
         self.params = Params()
         self.crs = Poly()
-        self.encrypted_model = []   # []Ciphertext
         self.secret_key = Poly()
+        self.data = Data()
     
-    def ColKeySwitch(self, ciphertext = [], cks_shares = []):
-        # ciphertext: []Ciphertext
-        # cks_shares: []Poly
+    def ColKeySwitch(self, ciphertext = Data(), cks_shares = [ ]):
+        # ciphertext: Data
+        # cks_shares: []Share
         pass
     
     def Aggregate(self, ciphertexts = [ [] ]):
-        # ciphertexts: [][]Ciphertext
-        return []   # []Ciphertext
+        # ciphertexts: []Data
+        return []   # Data
 
     def Average(self, n = 1)
         # n = len(cks_shares)
@@ -42,8 +55,8 @@ class MPHEServer:
     def GenCRS(self):
         return self.crs
 
-    def ColKeyGen(self, ckg_shares = []):
-        # ckg_shares: []Poly
+    def ColKeyGen(self, ckg_shares = [ ]):
+        # ckg_shares: []Share (ASSUME: len(Share.data) == 1)
         return Poly()
 
 class MPHEClient:

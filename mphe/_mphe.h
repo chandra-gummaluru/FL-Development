@@ -21,11 +21,15 @@ typedef struct { const char *p; ptrdiff_t n; } _GoString_;
 
 #line 3 "export.go"
 
+#include <stdbool.h>
+#include <stddef.h>
+
 typedef struct {
 	long long unsigned int* data;
 	size_t size;
 } Luint64;
 
+// Params
 typedef struct {
 	Luint64 qi;
 	Luint64 pi;
@@ -36,6 +40,47 @@ typedef struct {
 	double scale;
 	double sigma;
 } Params;
+
+// Poly
+typedef struct {
+	Luint64* coeffs;
+	size_t size;
+} Poly;
+
+// PolyPair
+typedef struct {
+	Poly p0;
+	Poly p1;
+} PolyPair;
+
+// Share
+typedef struct {
+	Poly* data;
+	size_t size;
+} Share;
+
+// Ciphertext
+typedef struct {
+	Poly* value;
+	size_t size;
+
+	double scale;
+	bool isNTT;
+} Ciphertext;
+
+// Data
+typedef struct {
+	Ciphertext* data;
+	size_t size;
+} Data;
+
+// MPHEServer
+typedef struct {
+	Params params;
+	Poly crs;
+	Poly secretKey;
+	Data data;
+} MPHEServer;
 
 #line 1 "cgo-generated-wrapper"
 
@@ -89,6 +134,17 @@ extern "C" {
 
 extern void mpheTest();
 extern Params* newParams();
+extern Poly* newPoly();
+extern Ciphertext* newCiphertext();
+extern MPHEServer* newMPHEServer();
+extern Poly* genCRS(MPHEServer* server);
+extern void colKeySwitch(MPHEServer* server, Data* data, Share* cksShares, size_t cksSize);
+extern PolyPair* colKeyGen(MPHEServer* server, Share* ckgShares, size_t ckgSize);
+extern Data* aggregate(MPHEServer* server, Data* datas, size_t datasSize);
+extern void average(MPHEServer* server, int n);
+extern void printParams(Params* params);
+extern void printPoly(Poly* p);
+extern void printCiphertext(Ciphertext* c);
 
 #ifdef __cplusplus
 }
