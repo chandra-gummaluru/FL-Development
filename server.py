@@ -204,7 +204,7 @@ class FLServer(Server):
 
 ### Main Code ###
 
-BUFFER_TIME = 20
+BUFFER_TIME = 5
 
 if __name__ == '__main__':
     # the socket for the server.
