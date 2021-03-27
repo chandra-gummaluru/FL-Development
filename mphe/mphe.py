@@ -75,7 +75,22 @@ newMPHEServer = so.newMPHEServer
 newMPHEServer.restype = POINTER(MPHEServer)
 
 genCRS = so.genCRS
+genCRS.argtypes = [ POINTER(MPHEServer) ]
 genCRS.restype = POINTER(Poly)
+
+colKeySwitch = so.colKeySwitch
+colKeySwitch.argtypes = [ POINTER(MPHEServer), POINTER(Share), c_size_t ]
+
+colKeyGen = so.colKeyGen
+colKeyGen.argtypes = [ POINTER(MPHEServer), POINTER(Share), c_size_t ]
+colKeyGen.restype = POINTER(PolyPair)
+
+aggregate = so.aggregate
+aggregate.argtypes = [ POINTER(MPHEServer), POINTER(Data), c_size_t ]
+aggregate.restype = POINTER(Data)
+
+average = so.average
+average.argtypes = [ POINTER(MPHEServer), c_int ]
 
 if __name__ == '__main__':
     # # so.mpheTest()
