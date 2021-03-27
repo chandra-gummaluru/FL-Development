@@ -1,8 +1,11 @@
-import time, sys, threading, errno
-import socket
+import time, sys, threading, errno, socket
+
 import utils
+from utils import DEBUG_LEVEL, COLORS
 
 import client_trainer
+
+debug_level = DEBUG_LEVEL.INFO
 
 class Client():
     def __init__(self, server):
@@ -14,8 +17,10 @@ class Client():
         # Communication interface
         self.comm_handler = None
 
+        self.TIMEOUT = 5
+
     # Attempt to connect to Server
-    def connect(self):
+    def attempt_to_connect(self):
         try:
             # Connect socket
             self.socket.connect(self.server)
@@ -27,6 +32,29 @@ class Client():
             self.comm_handler.start()
         except:
             self.connected = False
+
+    def connect(self):
+        if debug_level >= DEBUG_LEVEL.INFO:
+            print(COLORS.OKCYAN + 'Attempting to connect to {} (Timeout: {}s)'.format(self.server, self.TIMEOUT) + COLORS.ENDC)
+
+        # Retry to connect to the server
+        start = time.time()
+
+        while (time.time() - start) < self.TIMEOUT:
+            self.attempt_to_connect()
+
+            if self.connected:
+                break
+
+        # Run the client (if connection succesful)
+        if not self.connected:
+            if debug_level >= DEBUG_LEVEL.INFO:
+                print(COLORS.FAIL + 'Connection timed out. Server {} not found'.format(SERVER) + COLORS.ENDC)
+        else:
+            if debug_level >= DEBUG_LEVEL.INFO:
+                print(COLORS.OKGREEN + 'Successfully connected as Client {}'.format(client.socket.getsockname()) + COLORS.ENDC)
+            self.run()
+
 
 # Handles FL Client training loop logic
 class FLClient(Client):
@@ -41,35 +69,56 @@ class FLClient(Client):
     def run(self):
         while not self.comm_handler.isStopped():
             # Wait for weights from the FLServer
+            if debug_level >= DEBUG_LEVEL.INFO:
+                print(COLORS.OKCYAN + 'Waiting for model from server...(Timeout ' + str(self.TIMEOUT) + 's)' + COLORS.ENDC)
+
+            start = time.time()
+
             while not self.comm_handler.has_message():
                 # TODO: sleep a bit
                 continue
 
-            # Get message
-            weights = self.comm_handler.get_message()
+            if not self.comm_handler.has_message():
+                if debug_level >= DEBUG_LEVEL.INFO:
+                    print(COLORS.WARNING + "Time Limit Exceeded: Weights not received." + COLORS.ENDC)
+            else:
+                if debug_level >= DEBUG_LEVEL.INFO:
+                    print(COLORS.OKGREEN + "Weights received." + COLORS.ENDC)
 
-            # sleep communication
-            self.comm_handler.pause()
+                # Get message
+                weights = self.comm_handler.get_message()
 
-            # Load weights
-            self.trainer.load_weights(weights)
+                # sleep communication
+                self.comm_handler.pause()
 
-            # Train model
-            self.trainer.train()
+                if debug_level >= DEBUG_LEVEL.INFO:
+                    print(COLORS.OKCYAN + "Training local model..." + COLORS.ENDC)
 
-            # Compute focused update
-            update = self.trainer.focused_update()
+                # Load weights
+                self.trainer.load_weights(weights)
 
-            # start communication
-            self.comm_handler.start()
+                # Train model
+                self.trainer.train()
 
-            # Send update to the server
-            self.comm_handler.queue_message(update)
+                if debug_level >= DEBUG_LEVEL.INFO:
+                    print(COLORS.OKGREEN + "Training complete." + COLORS.ENDC)
+                    print(COLORS.OKCYAN + "Sending update to server..." + COLORS.ENDC)
+
+                # Compute focused update
+                update = self.trainer.focused_update()
+                print(len(update))
+
+                # start communication
+                self.comm_handler.start()
+
+                # Send update to the server
+                self.comm_handler.queue_message(update)
+
+                if debug_level >= DEBUG_LEVEL.INFO:
+                    print(COLORS.OKGREEN + "Update sent." + COLORS.ENDC)
 
 
 ### Main Code ###
-
-TIMEOUT = 10 # seconds
 
 SERVER = (socket.gethostbyname('localhost'), 8080)
 #SERVER = ('192.168.2.26', 12050)   # TODO: pickle message gets truncated over local network
@@ -82,21 +131,4 @@ if __name__ == '__main__':
 
     # Instantiate FL client with Training program
     client = FLClient(SERVER, client_trainer.ClientTrainer(nums[idx]))
-
-    # Retry to connect to the server
-    start = time.time()
-
-    print('Attempting to connect to {} - timeout ({} s)'.format(SERVER, TIMEOUT))
-
-    while (time.time() - start) < TIMEOUT:
-        client.connect()
-
-        if client.connected:
-            break
-
-    # Run Client (if connection succesful)
-    if not client.connected:
-        print('Connection timed out. Server {} not found'.format(SERVER))
-    else:
-        print('Successfully connected as Client {}'.format(client.socket.getsockname()))
-        client.run()
+    client.connect()

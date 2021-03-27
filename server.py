@@ -1,18 +1,18 @@
-import time, sys, threading, errno
-import socket
-
-import queue
-import pickle
+import time, sys, threading, errno, socket, queue, pickle, random
+from random import sample
 
 import utils
-from random import sample
+from utils import DEBUG_LEVEL, COLORS
 
 import server_trainer
 
+debug_level = DEBUG_LEVEL.INFO
 
 class Server():
     def __init__(self, host):
-        print('Hello from host (SERVER):', host)
+        if debug_level >= DEBUG_LEVEL.INFO:
+            print(COLORS.OKCYAN + 'Started server at ' + str(host) + COLORS.ENDC)
+
         # Listening socket.
         self.s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.s.bind(host)
@@ -51,7 +51,7 @@ class Server():
             client_sock, client_addr = self.s.accept()
             client_sock.setblocking(False)
 
-            print('Established connection to {}'.format(client_addr))
+            print(COLORS.OKGREEN + 'Established connection to {}'.format(client_addr) + COLORS.ENDC)
 
             # Create handlers for communication with clients.
             client_comm_handler = utils.Comm_Handler((client_sock, client_addr))
@@ -95,23 +95,42 @@ class FLServer(Server):
         self.client_subset = []
 
         # Flags / Cache for FL loop
-        self.aggregated_update = None
-        self.broadcasted = False
+        self.aggregated_update = None # whether the current updates have been aggreated.
+        self.broadcasted = False # whether the aggreated update has been broadcasted.
 
         # TODO: Encapsulate these in a class.
         # FL Model trainer
         self.trainer = trainer
         self.subset_size = 3 # Default
 
+        # Cypher for encryption and decryption of data.
+        self.cypher = None
+
+        # Timeout.
+        self.TIMEOUT = 30
+
     # Executes FL Training Loop
     def train(self):
-        while True:
-            # select clients if no model has been broadcasted.
+        while len(self.client_comm_handlers) > 0:
+            # select a subset of the clients and broadcast the model.
             if not self.broadcasted:
+                if debug_level >= DEBUG_LEVEL.INFO:
+                    print(COLORS.OKCYAN + "Selecting clients..." + COLORS.ENDC)
+
                 self.select_clients(self.subset_size)
 
+                if debug_level >= DEBUG_LEVEL.INFO:
+                    print(COLORS.OKCYAN + "Broadcasting model..." + COLORS.ENDC)
+
+                self.broadcast_model()
+
+            if debug_level >= DEBUG_LEVEL.INFO:
+                print(COLORS.OKCYAN + "Waiting for updates (Timeout: 30s)..." + COLORS.ENDC)
+
+            start = time.time()
+
             # while clients exist and a model has been broadcasted but no aggreated update has been created...
-            while (self.aggregated_update is None) and len(self.client_subset) > 0 and self.broadcasted:
+            while (self.aggregated_update is None) and len(self.client_subset) > 0 and time.time() - start < self.TIMEOUT:
                 # Try to create an aggregated update.
                 self.aggregated_update = self.aggregate_updates()
 
@@ -120,6 +139,10 @@ class FLServer(Server):
                 # Pause communication
                 self.pause()
 
+                if debug_level >= DEBUG_LEVEL.INFO:
+                    print(COLORS.OKGREEN + "All updates received." + COLORS.ENDC)
+                    print(COLORS.OKCYAN + "Aggregating updates..." + COLORS.ENDC)
+
                 # Update the model using aggregated update.
                 self.update_model(self.aggregated_update)
                 self.aggregated_update = None
@@ -127,12 +150,17 @@ class FLServer(Server):
                 # Reset client subset (to be re-selected)
                 self.client_subset = []
 
+                if debug_level >= DEBUG_LEVEL.INFO:
+                    print(COLORS.OKCYAN + "Sending aggregated update to clients..." + COLORS.ENDC)
+
                 # Restart communication
                 self.start()
+            else:
+                if debug_level >= DEBUG_LEVEL.INFO:
+                    print(COLORS.WARNING + "Time-limit exceeded: Some updates were not received." + COLORS.ENDC)
 
-            # Broadcast to Client Subset
-            # NOTE: if client subset empty, broadcast will return False
-            self.broadcasted = self.broadcast_model()
+        if debug_level >= DEBUG_LEVEL.INFO:
+            print(COLORS.FAIL + "All clients disconected." + COLORS.ENDC)
 
     ### FL Training Loop ###
 
@@ -201,7 +229,6 @@ class FLServer(Server):
 
         return True
 
-
 ### Main Code ###
 
 BUFFER_TIME = 5
@@ -218,9 +245,13 @@ if __name__ == '__main__':
     flServer.start()
 
     # Buffer for clients to connect
-    print('Buffer time for Clients to connect:', BUFFER_TIME)
+    print(COLORS.OKCYAN + 'Waiting for clients to connect...(Timeout: ' + str(BUFFER_TIME) + 's)' + COLORS.ENDC)
     time.sleep(BUFFER_TIME)
 
-    # Train the FL server model.
-    print('Starting FL Training Loop')
-    flServer.train()
+    if len(flServer.client_comm_handlers) == 0:
+        print(COLORS.FAIL + "Time limit exceeed: No clients connected." + COLORS.ENDC)
+    else:
+        # Train the FL server model.
+        print(COLORS.WARNING + 'Time limit exceeded: ' + str(len(flServer.client_comm_handlers)) + ' client(s) connected.' + COLORS.ENDC)
+        print(COLORS.OKCYAN + "Starting FL training loop..." + COLORS.ENDC)
+        flServer.train()

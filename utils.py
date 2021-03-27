@@ -5,7 +5,22 @@ import pickle
 import math
 
 DEBUG = True
-MAX_BUFFER_SIZE = 4096
+MAX_BUFFER_SIZE = 2048
+
+class DEBUG_LEVEL:
+    NONE = 0
+    ERRORS = 1
+    WARNS = 2
+    INFO = 3
+    ALL = 4
+
+class COLORS:
+    OKBLUE = '\033[94m'
+    OKCYAN = '\033[96m'
+    OKGREEN = '\033[92m'
+    WARNING = '\033[93m'
+    FAIL = '\033[91m'
+    ENDC = '\033[0m'
 
 class StoppableThread(threading.Thread):
 
@@ -95,7 +110,7 @@ class Comm_Handler():
                     continue
                 else:
                     # Remove broken peer + end thread (by exiting)
-                    print('Peer {}: receive error {}'.format(self.peer_addr, e))
+                    print(COLORS.FAIL + 'Peer {}: receive error {}'.format(self.peer_addr, e) + COLORS.ENDC)
                     self.error = True
                     self.stop()
                     return
@@ -104,11 +119,8 @@ class Comm_Handler():
                 with self.in_lock:
                     if self.in_queue.full():
                         continue
-
                     # Queue message received from peer
                     self.in_queue.put(msg)
-                    if DEBUG:
-                        print('<{}> {}'.format(self.peer_addr, msg))
 
     # Determine if peer has an update/message
     def has_message(self):
@@ -156,7 +168,7 @@ class Comm_Handler():
 
                     #self.peer_sock.sendall(smsg)
                 except:
-                    print('Peer {}: Send Error \'{}\''.format(self.peer_addr, sys.exc_info()[0]))
+                    print(COLORS.FAIL + 'Peer {}: Send Error \'{}\''.format(self.peer_addr, sys.exc_info()[0]) + COLORS.ENDC)
                     self.error = True
                     self.stop()
                     return

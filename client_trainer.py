@@ -1,17 +1,18 @@
+import utils
+from utils import DEBUG_LEVEL, COLORS
+
 import torch
 import torchvision
 import torchvision.transforms as transforms
 import torch.nn as nn
 from torch.utils.data import DataLoader
 
+import time, csv
 import numpy as np
-import time
 
-import csv
+debug_level = DEBUG_LEVEL.INFO
 
 import model1
-
-DEBUG = True
 
 class ClientTrainer():
     def __init__(self, local_client_digits, use_cuda=True):
@@ -69,8 +70,6 @@ class ClientTrainer():
 
         start = time.time()
 
-        print('Started Training')
-
         for epoch in range(self.num_epochs):
             running_loss = 0.0
 
@@ -92,23 +91,22 @@ class ClientTrainer():
                 # Accumulate the loss
                 running_loss += loss.item()
 
-                # if i % 10 == 0:  # every 10 batches
-                #     # Compute accuracy
-                #     self.train_acc.append(self.evaluate_accuracy(self.train_loader))
-                #     self.test_acc.append(self.evaluate_accuracy(self.test_loader))
+            if debug_level >= DEBUG_LEVEL.INFO:
+                print('\tEpoch ' + str(epoch + 1))
 
-                #     # Print loss
-                #     if DEBUG:
-                #         print('[Epoch %d, Batch Number %5d] loss: %.3f' % (epoch + 1, i + 1, running_loss / (10 * self.batch_size)))
-                #     running_loss = 0.0
+            train_acc_list, train_acc  = self.evaluate_accuracy(self.train_loader)
+            test_acc_list, test_acc = self.evaluate_accuracy(self.test_loader)
+            self.train_acc.append(train_acc_list)
+            self.test_acc.append(test_acc_list)
 
-            print('Epoch:', epoch + 1)
-            self.train_acc.append(self.evaluate_accuracy(self.train_loader))
-            self.test_acc.append(self.evaluate_accuracy(self.test_loader))
-
+            if debug_level >= DEBUG_LEVEL.INFO:
+                np.set_printoptions(precision=3)
+                print(COLORS.OKBLUE + '\tTraining Accuracy: ' + str(train_acc) + COLORS.ENDC)
+                print(COLORS.OKBLUE + '\tTesting Accuracy: ' + str(test_acc) + COLORS.ENDC)
         end = time.time()
-        print('Finished Training')
-        print('%0.2f minutes' %((end - start) / 60))
+
+        if debug_level >= DEBUG_LEVEL.INFO:
+            print('\t%0.2f minutes' %((end - start) / 60))
 
         # Save train/test accuracy after training
         self.save_to_csv(self.train_acc, './train_curves/client{}_train.csv'.format(self.digits))
@@ -148,10 +146,8 @@ class ClientTrainer():
 
         total_by_class[(total_by_class == 0).nonzero()] = 1.0 # TODO: Change this to be an NaN.
 
-        if DEBUG:
-            print('Total Accuracy: %0.3f %%' % (100 * correct_by_class.sum() / total_by_class.sum()))
-
-        return (correct_by_class / total_by_class).cpu().tolist()
+        acc = 100 * correct_by_class.sum() / total_by_class.sum()
+        return (correct_by_class / total_by_class).cpu().tolist(), np.array(acc.cpu())
 
     # Save data to CSV file
     def save_to_csv(self, data, file_path):
@@ -169,6 +165,4 @@ if __name__ == '__main__':
 
     trainer.train()
     print('Model trained successfully!')
-
-    print(type(trainer.focused_update()))
     print('Focused update computed successfully!')
