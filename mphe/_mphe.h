@@ -82,6 +82,14 @@ typedef struct {
 	Data data;
 } MPHEServer;
 
+// MPHEClient
+typedef struct {
+	Params params;
+	Poly crs;
+	Poly secretKey;
+	Poly decryptionKey;
+} MPHEClient;
+
 #line 1 "cgo-generated-wrapper"
 
 
@@ -142,9 +150,14 @@ extern void colKeySwitch(MPHEServer* server, Data* data, Share* cksShares, size_
 extern PolyPair* colKeyGen(MPHEServer* server, Share* ckgShares, size_t ckgSize);
 extern Data* aggregate(MPHEServer* server, Data* datas, size_t datasSize);
 extern void average(MPHEServer* server, int n);
+extern MPHEClient* newMPHEClient();
+extern Data* encrypt(Params* parms, PolyPair* pk, double* array, size_t arraySize);
 extern void printParams(Params* params);
 extern void printPoly(Poly* p);
+extern void printPolyPair(PolyPair* pp);
 extern void printCiphertext(Ciphertext* c);
+extern void printCiphertext2(Params* parms, Poly* sk, Data* data);
+extern PolyPair* genPublicKey(Params* parms, Poly* sk);
 
 #ifdef __cplusplus
 }

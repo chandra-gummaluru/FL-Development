@@ -61,6 +61,14 @@ typedef struct {
 	Poly secretKey;
 	Data data;
 } MPHEServer;
+
+// MPHEClient
+typedef struct {
+	Params params;
+	Poly crs;
+	Poly secretKey;
+	Poly decryptionKey;
+} MPHEClient;
 */
 import "C"
 import "unsafe"
@@ -114,14 +122,13 @@ func newMPHEServer() *C.MPHEServer {
 	server := (*C.MPHEServer)(C.malloc(C.sizeof_MPHEServer))
 
 	// HARDCODED: CKKS Security Parameters
-	params := ckks.DefaultParams[ckks.PN12QP109]
-	server.params = *convParams(params)
+	server.params = *convParams(PARAMS)
 
 	// Generate CRS
 	server.crs = *genCRS(server)
 
 	// Generate SecretKey
-	keyGen := ckks.NewKeyGenerator(params)
+	keyGen := ckks.NewKeyGenerator(PARAMS)
 	secretKey := keyGen.GenSecretKey()
 	server.secretKey = *convPoly(secretKey.Get())
 
@@ -255,6 +262,51 @@ func average(server *C.MPHEServer, n C.int) {
 	server.data = *convData(ct)
 }
 
+/// MPHE Client
+
+//export newMPHEClient
+func newMPHEClient() *C.MPHEClient {
+	client := (*C.MPHEClient)(C.malloc(C.sizeof_MPHEClient))
+
+	// HARDCODED: CKKS Security Parameters
+	client.params = *convParams(PARAMS)
+
+	return client
+}
+
+//export encrypt
+func encrypt(parms *C.Params, pk *C.PolyPair, array *C.double, arraySize C.size_t) *C.Data {
+	params := convCKKSParams(parms)
+	encoder := ckks.NewEncoder(params)
+
+	// fmt.Printf("ENTERED GO ENCRYPT\n")
+	publicKey := ckks.NewPublicKey(params)
+	publicKey.Set(convS2RingPoly(pk))
+	// fmt.Printf("Set the public key\n")
+	encryptor := ckks.NewEncryptorFromPk(params, publicKey)
+
+	// Encrypt the array element-wise
+	size := int(arraySize)
+	list := (*[1<<30]C.double)(unsafe.Pointer(array))[:size:size]
+
+	cts := make([]*ckks.Ciphertext, size)
+	for i, elem := range list {
+		val := complex(float64(elem), 0.0)
+		pt := encoder.EncodeNew([]complex128{val}, params.LogSlots())
+		// c := encryptor.EncryptNew(pt)
+		// fmt.Printf("value to encrypt is %v\n", val)
+		cts[i] = encryptor.EncryptNew(pt)
+	}
+
+	// parms = convParams(params)
+	// pk = convPolyPair(publicKey.Get())
+
+	// data := convData(cts)
+	// return data
+
+	return convData(cts)
+}
+
 /* DEBUG */
 
 //export printParams
@@ -271,14 +323,58 @@ func printPoly(p *C.Poly) {
 	fmt.Printf("Reconstructed poly: %+v\n", reflect.TypeOf(r))
 }
 
+//export printPolyPair
+func printPolyPair(pp *C.PolyPair) {
+	rpp := convS2RingPoly(pp)
+
+	fmt.Printf("Reconstructed polyPair: %+v\n", reflect.TypeOf(rpp))
+}
+
 //export printCiphertext
 func printCiphertext(c *C.Ciphertext) {
-	// cc := convCKKSCiphertext(c)
-
-	pt := DECRYPTOR.DecryptNew(CIPHERTEXT)
+	cc := convCKKSCiphertext(c)
+	pt := DECRYPTOR.DecryptNew(cc)
 	v := ENCODER.Decode(pt, PARAMS.LogSlots())
 
 	fmt.Printf("Reconstruced ciphertext: %v, %d\n", v[0], len(v))
+}
+
+//export printCiphertext2
+func printCiphertext2(parms *C.Params, sk *C.Poly, data *C.Data) {
+	cts := convSckksCiphertext(data)
+	
+	params := convCKKSParams(parms)
+	secretKey := ckks.NewSecretKey(params)
+	secretKey.Set(convRingPoly(sk))
+	decryptor := ckks.NewDecryptor(params, secretKey)
+	encoder := ckks.NewEncoder(params)
+
+	vals := make([]float64, len(cts))
+	for i, cc := range cts {
+		pt := decryptor.DecryptNew(cc)
+		v := encoder.Decode(pt, params.LogSlots())
+		vals[i] = real(v[0])
+	}
+
+	fmt.Printf("Reconstruced ciphertext: %v\n", vals)
+}
+
+//export genPublicKey
+func genPublicKey(parms *C.Params, sk *C.Poly) *C.PolyPair {
+	params := convCKKSParams(parms)
+	keyGen := ckks.NewKeyGenerator(params)
+
+	secretKey := new(ckks.SecretKey)
+	rsk := convRingPoly(sk)
+	secretKey.Set(rsk)
+
+	publicKey := keyGen.GenPublicKey(secretKey)
+	pk := convPolyPair(publicKey.Get())
+
+	// parms = convParams(params)
+	// sk = convPoly(secretKey.Get())
+
+	return pk
 }
 
 /* HELPER: Conversion between C and Go structs */
@@ -297,9 +393,11 @@ func convLuint64(vals []uint64) C.Luint64 {
 
 // Luint64 --> []uint64
 func convSuint64(list C.Luint64) []uint64 {
+	// fmt.Printf("List Luint64 is: %v\n", unsafe.Pointer(list.data))
 	size := int(list.size)
+	// fmt.Printf("Size is: %v\n", size)
 	vals := (*[1 << 30]uint64)(unsafe.Pointer(list.data))[:size:size]
-
+	// fmt.Printf("done\n")
 	return vals
 }
 
@@ -354,7 +452,8 @@ func convPoly(r *ring.Poly) *C.Poly {
 	// Retrieve each coeff in a slice of C.Luint64
 	coeffs := make([]C.Luint64, len(r.Coeffs))
 	for i, coeff := range r.Coeffs {
-		coeffs[i] = convLuint64(coeff)
+		c := convLuint64(coeff)
+		coeffs[i] = c
 	}
 
 	// Populate C.Poly
@@ -373,7 +472,9 @@ func convRingPoly(p *C.Poly) *ring.Poly {
 	// Extract []uint64 from Luint64 to create [][]uint64
 	coeffs := make([][]uint64, size)
 	for i, coeff := range list {
-		coeffs[i] = convSuint64(coeff)
+		// fmt.Printf("(%d) RingPoly: %v, coeff: %v\n", i, p, &coeff)
+		c := convSuint64(coeff)
+		coeffs[i] = c
 	}
 
 	// Populate ring.Poly
@@ -393,6 +494,17 @@ func convPolyPair(rpp [2]*ring.Poly) *C.PolyPair {
 	pp.p1 = *convPoly(rpp[1])
 
 	return pp
+}
+
+// *C.PolyPair --> [2]*ring.Poly
+func convS2RingPoly(pp *C.PolyPair) [2]*ring.Poly {
+	var rpp [2]*ring.Poly
+	// fmt.Printf("PK: %v, ", pp)
+	// fmt.Printf("PK.p0: %v, PK.p1: %v\n", &pp.p0, &pp.p1)
+	rpp[0] = convRingPoly(&pp.p0)
+	rpp[1] = convRingPoly(&pp.p1)
+
+	return rpp
 }
 
 /// Ciphertext
@@ -424,7 +536,8 @@ func convCKKSCiphertext(c *C.Ciphertext) *ckks.Ciphertext {
 	// Extract []*ringPoly from []C.Poly
 	value := make([]*ring.Poly, size)
 	for i, poly := range list {
-		value[i] = convRingPoly(&poly)
+		v := convRingPoly(&poly)
+		value[i] = v
 	}
 
 	// Populate ckks.Ciphertext
@@ -464,7 +577,8 @@ func convSckksCiphertext(data *C.Data) []*ckks.Ciphertext {
 	// Extract []*ckks.Ciphertext from []C.Ciphertext
 	cct := make([]*ckks.Ciphertext, size)
 	for i, ciphertext := range cts {
-		cct[i] = convCKKSCiphertext(&ciphertext)
+		c := convCKKSCiphertext(&ciphertext)
+		cct[i] = c
 	}
 
 	return cct

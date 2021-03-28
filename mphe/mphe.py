@@ -5,7 +5,7 @@ so = cdll.LoadLibrary('./_mphe.so')
 
 class Luint64(Structure):
     _fields_ = [
-        ('data', POINTER(c_longlong)),
+        ('data', POINTER(c_ulonglong)),
         ('size', c_size_t)
     ]
 
@@ -35,9 +35,13 @@ newPoly.restype = POINTER(Poly)
 
 class PolyPair(Structure):
     _fields_ = [
-        ('p0', POINTER(Poly)),
-        ('p1', POINTER(Poly))
+        ('p0', Poly),
+        ('p1', Poly)
     ]
+
+genPublicKey = so.genPublicKey
+genPublicKey.argtypes = [ POINTER(Params), POINTER(Poly) ]
+genPublicKey.restype = POINTER(PolyPair)
 
 class Ciphertext(Structure):
     _fields_ = [
@@ -66,9 +70,9 @@ class MPHEServer(Structure):
     _fields_ = [
         ('params', Params),
         ('crs', Poly),
-        ('secret_key', Poly),
+        ('secretKey', Poly),
         
-        ('data', POINTER(Data)),
+        ('data', Data),
     ]
 
 newMPHEServer = so.newMPHEServer
@@ -91,6 +95,74 @@ aggregate.restype = POINTER(Data)
 
 average = so.average
 average.argtypes = [ POINTER(MPHEServer), c_int ]
+
+class MPHEClient(Structure):
+    _fields_ = [
+        ('params', Params),
+        ('crs', Poly),
+        ('secretKey', Poly),
+        ('decryptionKey', Poly)
+    ]
+
+newMPHEClient = so.newMPHEClient
+newMPHEClient.restype = POINTER(MPHEClient)
+
+encrypt = so.encrypt
+encrypt.argtypes = [ POINTER(Params), POINTER(PolyPair), POINTER(c_double), c_size_t ]
+encrypt.restype = POINTER(Data)
+
+# DEBUG
+printCiphertext2 = so.printCiphertext2
+printCiphertext2.argtypes = [ POINTER(Params), POINTER(Poly), POINTER(Data) ]
+
+import time
+
+def pLuint64(l):
+    data = []
+    for i in range(l.size):
+        data.append(l.data[i])
+    
+    return data
+
+def pPoly(p):
+    coeffs = []
+    for i in range(p.size):
+        coeff = pLuint64(p.coeffs[i])
+        coeffs.append(coeff)
+    return coeffs
+
+class pPolyPair:
+    def __init__(self, pp):
+        self.p0 = pPoly(pp.p0)
+        self.p1 = pPoly(pp.p1)
+
+# p_ --> _
+def pL_to_L(pL):
+    l = Luint64()
+    l.size = len(pL)
+    l.data = (c_ulonglong * l.size)(*pL)
+
+    return l
+
+def pP_to_Poly(pP):
+    coeffs = []
+    for coeff in pP:
+        c = pL_to_L(coeff)
+        coeffs.append(c)
+
+    p = Poly()
+    p.size = len(coeffs)
+    p.coeffs = (Luint64 * p.size)(*coeffs)
+
+    return p
+    
+def pPP_to_PolyPair(pPP):
+    pp = PolyPair()
+
+    pp.p0 = pP_to_Poly(pPP.p0)
+    pp.p1 = pP_to_Poly(pPP.p1)
+
+    return pp
 
 if __name__ == '__main__':
     # # so.mpheTest()
@@ -119,11 +191,11 @@ if __name__ == '__main__':
     # data2 = pi.tolist()
 
     # p.qi = Luint64()
-    # p.qi.data = (c_longlong * len(data1))(*data1)
+    # p.qi.data = (c_ulonglong * len(data1))(*data1)
     # p.qi.size = len(data1)
 
     # p.pi = Luint64()
-    # p.pi.data = (c_longlong * len(data2))(*data2)
+    # p.pi.data = (c_ulonglong * len(data2))(*data2)
     # p.pi.size = len(data2)
 
     # p.logN = params.contents.logN
@@ -152,12 +224,48 @@ if __name__ == '__main__':
 
     ### TEST: MPHEServer ###
     server = newMPHEServer()
-    print('Server:', server.contents.params, server.contents.crs)
+    # print('Server:', server.contents.params, server.contents.crs)
     # CRS = server.contents.crs
-    CRS = genCRS(server).contents
-    crs = []
-    for i in range(server.contents.crs.size):
-        npCoeff = np.ctypeslib.as_array(CRS.coeffs[i].data, shape=(CRS.coeffs[i].size,))
-        crs.append(npCoeff.tolist())
-    print('Poly coeffs casted to a list:', len(crs), len(crs[0]))
-    so.printPoly(pointer(server.contents.crs))
+    # CRS = genCRS(server).contents
+    # crs = []
+    # for i in range(server.contents.crs.size):
+    #     npCoeff = np.ctypeslib.as_array(CRS.coeffs[i].data, shape=(CRS.coeffs[i].size,))
+    #     crs.append(npCoeff.tolist())
+    # print('Poly coeffs casted to a list:', len(crs), len(crs[0]))
+    # so.printPoly(byref(server.contents.secretKey))
+
+    ### TEST: MPHEClient ###
+    # client = newMPHEClient()
+    # print('Client:', client.contents.params, client.contents.crs, client.contents.secretKey)
+
+    data = [ 0.0, 1.5, 10000, 4.232425, -3.111111111111 ]
+    data_in = (c_double * len(data))(*data)
+
+    params = byref(server.contents.params)
+    sk = server.contents.secretKey
+
+    pk = genPublicKey(params, sk)
+
+    # PK to Python
+    PK = pPolyPair(pk.contents)
+    print('Python PP:', PK, type(PK.p0[0]), PK.p0[0][0])
+    pk2 = pPP_to_PolyPair(PK)
+    print('ctypes PP:', pk2, pk2.p0, pk2.p0.coeffs, pk2.p0.coeffs.contents.data, pk2.p0.coeffs.contents.data[0])
+    print('')
+
+    SK = pPoly(sk)
+    print('Python P:', type(SK), type(SK[0]), SK[0][0])
+    sk2 = pP_to_Poly(SK)
+    print('ctypes PP:', sk2, sk2.coeffs, sk2.coeffs.contents.data, sk2.coeffs.contents.data[0])
+    print('')
+
+    # print('\nRAN ZERO\n')
+    # # so.printPolyPair(pk)
+    ct = encrypt(params, byref(pk2), data_in, len(data))
+    print('\nRAN ONCE\n')
+    # # so.printPolyPair(pk)
+    # # ct = encrypt(params, pk, data_in, len(data))
+    # print('\nRAN TWICE\n')
+
+    # # so.printPoly(sk)
+    printCiphertext2(params, byref(sk2), ct)

@@ -63,8 +63,8 @@ class MPHEClient:
     def __init__(self):
         self.params = Params()
         self.crs = Poly()
-        self.decryption_key = Poly()
         self.secret_key = Poly()
+        self.decryption_key = Poly()
 
     def Decrypt(self, ciphertext = []):
         return []   # []float
