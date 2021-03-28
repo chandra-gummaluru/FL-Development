@@ -6,11 +6,11 @@ from torch.utils.data import DataLoader
 import numpy as np
 
 import utils
-from utils import DEBUG_LEVEL, COLORS
+from utils import DEBUG_LEVEL, TERM
 
 debug_level = DEBUG_LEVEL.INFO
 
-import csv
+import sys, csv
 
 import model1
 
@@ -54,9 +54,8 @@ class ServerTrainer():
         self.test_acc.append(self.compute_accuracy(self.test_loader))
 
         if debug_level >= DEBUG_LEVEL.INFO:
-            print('\tEpoch ' + str(len(self.test_acc) - 1))
-            np.set_printoptions(precision=3)
-            print(COLORS.OKBLUE + '\tClass Accuracies: {}'.format(100 * np.array(self.test_acc[-1])) + COLORS.ENDC)
+            TERM.write('\tEpoch ' + str(len(self.test_acc) - 1) + '\n')
+            TERM.write('\tClass Accuracies: {}'.format(100 * np.array(self.test_acc[-1])))
 
         # Occasionally save current test accuracy
         self.save_to_csv(self.test_acc, './train_curves/server.csv')

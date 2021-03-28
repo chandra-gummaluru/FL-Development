@@ -1,5 +1,5 @@
 import utils
-from utils import DEBUG_LEVEL, COLORS
+from utils import DEBUG_LEVEL, TERM
 
 import torch
 import torchvision
@@ -7,7 +7,7 @@ import torchvision.transforms as transforms
 import torch.nn as nn
 from torch.utils.data import DataLoader
 
-import time, csv
+import sys, time, csv
 import numpy as np
 
 debug_level = DEBUG_LEVEL.INFO
@@ -92,7 +92,7 @@ class ClientTrainer():
                 running_loss += loss.item()
 
             if debug_level >= DEBUG_LEVEL.INFO:
-                print('\tEpoch ' + str(epoch + 1))
+                TERM.write('\tEpoch ' + str(epoch + 1))
 
             train_acc_list, train_acc  = self.evaluate_accuracy(self.train_loader)
             test_acc_list, test_acc = self.evaluate_accuracy(self.test_loader)
@@ -100,13 +100,12 @@ class ClientTrainer():
             self.test_acc.append(test_acc_list)
 
             if debug_level >= DEBUG_LEVEL.INFO:
-                np.set_printoptions(precision=3)
-                print(COLORS.OKBLUE + '\tTraining Accuracy: ' + str(train_acc) + COLORS.ENDC)
-                print(COLORS.OKBLUE + '\tTesting Accuracy: ' + str(test_acc) + COLORS.ENDC)
+                TERM.write('\tTraining Accuracy: ' + str(train_acc))
+                TERM.write('\tTesting Accuracy: ' + str(test_acc))
         end = time.time()
 
         if debug_level >= DEBUG_LEVEL.INFO:
-            print('\t%0.2f minutes' %((end - start) / 60))
+            TERM.write('\t%0.2f minutes' %((end - start) / 60))
 
         # Save train/test accuracy after training
         self.save_to_csv(self.train_acc, './train_curves/client{}_train.csv'.format(self.digits))
@@ -161,8 +160,8 @@ if __name__ == '__main__':
 
     trainer = ClientTrainer([1, 2, 3], use_cuda=True)
     trainer.load_weights(trainer.model.state_dict())
-    print('Weights loaded successfully!')
+    TERM.write('Weights loaded successfully!')
 
     trainer.train()
-    print('Model trained successfully!')
-    print('Focused update computed successfully!')
+    TERM.write('Model trained successfully!')
+    TERM.write('Focused update computed successfully!')
