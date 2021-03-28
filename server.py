@@ -8,8 +8,6 @@ import server_trainer
 
 debug_level = DEBUG_LEVEL.INFO
 
-def asfaf(a):
-    return 5
 class Server():
     def __init__(self, host):
         if debug_level >= DEBUG_LEVEL.INFO:
@@ -43,7 +41,6 @@ class Server():
             # cache the client socket.
             self.connected_clients_by_addr[client_addr] = client_sock
             self.connected_clients_by_sock[client_sock] = client_addr
-            print(client_addr)
 
     # Starts listener thread to add connected clients.
     def start(self):
@@ -107,7 +104,7 @@ class FLServer(Server):
             self.broadcast_model()
 
             if debug_level >= DEBUG_LEVEL.INFO:
-                TERM.write_info("Waiting for updates (Timeout: 30s)...")
+                TERM.write_info("Waiting for updates...(Timeout: 30s)")
 
             start = time.time()
 

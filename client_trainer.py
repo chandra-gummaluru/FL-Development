@@ -100,8 +100,8 @@ class ClientTrainer():
             self.test_acc.append(test_acc_list)
 
             if debug_level >= DEBUG_LEVEL.INFO:
-                TERM.write('\tTraining Accuracy: ' + str(train_acc))
-                TERM.write('\tTesting Accuracy: ' + str(test_acc))
+                TERM.write('\tTraining Accuracy: {0:0.2f}'.format(train_acc))
+                TERM.write('\tTesting Accuracy: {0:0.2f}'.format(test_acc))
         end = time.time()
 
         if debug_level >= DEBUG_LEVEL.INFO:
@@ -146,7 +146,7 @@ class ClientTrainer():
         total_by_class[(total_by_class == 0).nonzero()] = 1.0 # TODO: Change this to be an NaN.
 
         acc = 100 * correct_by_class.sum() / total_by_class.sum()
-        return (correct_by_class / total_by_class).cpu().tolist(), np.array(acc.cpu())
+        return (correct_by_class / total_by_class).cpu().tolist(), float(acc.cpu())
 
     # Save data to CSV file
     def save_to_csv(self, data, file_path):

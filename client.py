@@ -53,6 +53,7 @@ class FLClient(Client):
 
         # Training Program (specific to the model being trained)
         self.trainer = trainer
+        self.TIMEOUT = 120
 
     ### FL Training Loop ###
 
@@ -60,11 +61,11 @@ class FLClient(Client):
         while True:
             # Wait for weights from the FLServer
             if debug_level >= DEBUG_LEVEL.INFO:
-                TERM.write_info('Waiting for model from server...(Timeout ' + str(5) + 's)')
+                TERM.write_info('Waiting for model from server...(Timeout: ' + str(self.TIMEOUT) + ')')
 
                 start_time = time.time()
                 weights = None
-                while ((weights == None) and (time.time() - start_time < 5)):
+                while ((weights == None) and (time.time() - start_time < self.TIMEOUT)):
                     # get the weights.
                     weights = Communication_Handler.recv_msg(self.sock)
 

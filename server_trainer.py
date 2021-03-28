@@ -4,6 +4,7 @@ import torchvision.transforms as transforms
 from torch.utils.data import DataLoader
 
 import numpy as np
+np.set_printoptions(formatter={'float': lambda x: "{0:0.2f}".format(x)})
 
 import utils
 from utils import DEBUG_LEVEL, TERM
