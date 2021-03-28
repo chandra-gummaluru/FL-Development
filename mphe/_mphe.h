@@ -25,6 +25,11 @@ typedef struct { const char *p; ptrdiff_t n; } _GoString_;
 #include <stddef.h>
 
 typedef struct {
+	double* data;
+	size_t size;
+} Ldouble;
+
+typedef struct {
 	long long unsigned int* data;
 	size_t size;
 } Luint64;
@@ -152,6 +157,7 @@ extern Data* aggregate(MPHEServer* server, Data* datas, size_t datasSize);
 extern void average(MPHEServer* server, int n);
 extern MPHEClient* newMPHEClient();
 extern Data* encrypt(Params* parms, PolyPair* pk, double* array, size_t arraySize);
+extern Ldouble* decrypt(Params* parms, Poly* sk, Data* data);
 extern void printParams(Params* params);
 extern void printPoly(Poly* p);
 extern void printPolyPair(PolyPair* pp);

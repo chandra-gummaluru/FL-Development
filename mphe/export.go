@@ -5,6 +5,11 @@ package main
 #include <stddef.h>
 
 typedef struct {
+	double* data;
+	size_t size;
+} Ldouble;
+
+typedef struct {
 	long long unsigned int* data;
 	size_t size;
 } Luint64;
@@ -279,10 +284,8 @@ func encrypt(parms *C.Params, pk *C.PolyPair, array *C.double, arraySize C.size_
 	params := convCKKSParams(parms)
 	encoder := ckks.NewEncoder(params)
 
-	// fmt.Printf("ENTERED GO ENCRYPT\n")
 	publicKey := ckks.NewPublicKey(params)
 	publicKey.Set(convS2RingPoly(pk))
-	// fmt.Printf("Set the public key\n")
 	encryptor := ckks.NewEncryptorFromPk(params, publicKey)
 
 	// Encrypt the array element-wise
@@ -293,18 +296,38 @@ func encrypt(parms *C.Params, pk *C.PolyPair, array *C.double, arraySize C.size_
 	for i, elem := range list {
 		val := complex(float64(elem), 0.0)
 		pt := encoder.EncodeNew([]complex128{val}, params.LogSlots())
-		// c := encryptor.EncryptNew(pt)
-		// fmt.Printf("value to encrypt is %v\n", val)
 		cts[i] = encryptor.EncryptNew(pt)
 	}
 
-	// parms = convParams(params)
-	// pk = convPolyPair(publicKey.Get())
-
-	// data := convData(cts)
-	// return data
-
 	return convData(cts)
+}
+
+//export decrypt
+func decrypt(parms *C.Params, sk *C.Poly, data *C.Data) *C.Ldouble {
+	params := convCKKSParams(parms)
+	encoder := ckks.NewEncoder(params)
+
+	secretKey := ckks.NewSecretKey(params)
+	secretKey.Set(convRingPoly(sk))
+	decryptor := ckks.NewDecryptor(params, secretKey)
+
+	// Decrypt the array element-wise
+	cts := convSckksCiphertext(data)
+	values := make([]C.double, int(data.size))
+
+	for i, ct := range cts {
+		pt := decryptor.DecryptNew(ct)
+		v := encoder.Decode(pt, params.LogSlots())[0]
+		values[i] = C.double(real(v))
+	}
+	
+	// Populate C.Ldouble
+	array := (*C.Ldouble)(C.malloc(C.sizeof_Ldouble))
+
+	array.data = (*C.double)(&values[0])
+	array.size = C.size_t(len(values))
+
+	return array
 }
 
 /* DEBUG */

@@ -3,6 +3,12 @@ import numpy as np
 
 so = cdll.LoadLibrary('./_mphe.so')
 
+class Ldouble(Structure):
+    _fields_ = [
+        ('data', POINTER(c_double)),
+        ('size', c_size_t)
+    ]
+
 class Luint64(Structure):
     _fields_ = [
         ('data', POINTER(c_ulonglong)),
@@ -110,6 +116,10 @@ newMPHEClient.restype = POINTER(MPHEClient)
 encrypt = so.encrypt
 encrypt.argtypes = [ POINTER(Params), POINTER(PolyPair), POINTER(c_double), c_size_t ]
 encrypt.restype = POINTER(Data)
+
+decrypt = so.decrypt
+decrypt.argtypes = [ POINTER(Params), POINTER(Poly), POINTER(Data) ]
+decrypt.restype = POINTER(Ldouble)
 
 # DEBUG
 printCiphertext2 = so.printCiphertext2
@@ -269,3 +279,9 @@ if __name__ == '__main__':
 
     # # so.printPoly(sk)
     printCiphertext2(params, byref(sk2), ct)
+
+    data_out = decrypt(params, byref(sk2), ct)
+    rec_data = []
+    for i in range(data_out.contents.size):
+        rec_data.append(data_out.contents.data[i])
+    print('Enc --> Dec:', rec_data)
