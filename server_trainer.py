@@ -2,12 +2,25 @@ import torch
 import torchvision
 import torchvision.transforms as transforms
 from torch.utils.data import DataLoader
+import torch.nn.functional as F
+import torch.nn as nn
+import numpy as np
+from collections import OrderedDict
 
-import csv
+
+import numpy as np
+
+
+np.set_printoptions(formatter={'float': lambda x: "{0:0.2f}".format(x)})
+
+import utils
+from utils import DEBUG_LEVEL, TERM
+
+debug_level = DEBUG_LEVEL.INFO
+
+import sys, csv
 
 import model1
-
-DEBUG = True
 
 # Class encapsulating Training program for the Server's model
 class ServerTrainer():
@@ -25,6 +38,7 @@ class ServerTrainer():
             self.model = self.model.cuda()
 
     ### Training Program ###
+    
 
     # Aggregate updates into a single update
     def aggregate(self, updates):
@@ -34,12 +48,15 @@ class ServerTrainer():
         for key in aggregate_update:
             # Accumulate the updates
             for update in updates:
+                # print(aggregate_update[key])
+                # print(update[1])
                 aggregate_update[key] += update[key]
 
             # Average
             aggregate_update[key] /= len(updates)
 
         return aggregate_update
+        
 
     # Apply the aggregate update to the model
     def update(self, aggregate_update):
@@ -48,8 +65,9 @@ class ServerTrainer():
         # Compute Accuracy (test)
         self.test_acc.append(self.compute_accuracy(self.test_loader))
 
-        if DEBUG:
-            print('(iteration, accuracy): ({}, {})'.format(len(self.test_acc) - 1, self.test_acc[-1]))
+        if debug_level >= DEBUG_LEVEL.INFO:
+            TERM.write('\tEpoch ' + str(len(self.test_acc) - 1) + '\n')
+            TERM.write('\tClass Accuracies: {}'.format(100 * np.array(self.test_acc[-1])))
 
         # Occasionally save current test accuracy
         self.save_to_csv(self.test_acc, './train_curves/server.csv')
@@ -118,3 +136,4 @@ class ServerTrainer():
         with open(file_path, 'w+', newline='') as csv_file:
             writer = csv.writer(csv_file)
             writer.writerows(data)
+            
