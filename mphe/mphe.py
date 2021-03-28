@@ -121,6 +121,18 @@ decrypt = so.decrypt
 decrypt.argtypes = [ POINTER(Params), POINTER(Poly), POINTER(Data) ]
 decrypt.restype = POINTER(Ldouble)
 
+genSecretKey = so.genSecretKey
+genSecretKey.argtypes = [ POINTER(Params) ]
+genSecretKey.restype = POINTER(Poly)
+
+genCKGShare = so.genCKGShare
+genCKGShare.argtypes = [ POINTER(Params), POINTER(Poly), POINTER(Poly) ]
+genCKGShare.restype = POINTER(Share)
+
+genCKSShare = so.genCKSShare
+genCKSShare.argtypes = [ POINTER(Params), POINTER(Poly), POINTER(Data) ]
+genCKSShare.restype = POINTER(Share)
+
 # DEBUG
 printCiphertext2 = so.printCiphertext2
 printCiphertext2.argtypes = [ POINTER(Params), POINTER(Poly), POINTER(Data) ]

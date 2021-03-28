@@ -86,6 +86,7 @@ import "reflect"
 
 var PARAMS *ckks.Parameters = ckks.DefaultParams[ckks.PN12QP109]
 var SECRET_KEY *ckks.SecretKey = ckks.NewKeyGenerator(PARAMS).GenSecretKey()
+var SMUDGE float64 = 3.19
 var VALUE complex128 = complex(10.0, 5.0)
 
 var ENCODER ckks.Encoder = ckks.NewEncoder(PARAMS)
@@ -169,7 +170,7 @@ func colKeySwitch(server *C.MPHEServer, data *C.Data, cksShares *C.Share, cksSiz
 	for i, ct := range cts {
 		// Create CKSProtocol + Server share
 		params := convCKKSParams(&server.params)
-		cksProtocol := dckks.NewCKSProtocol(params, 3.19)
+		cksProtocol := dckks.NewCKSProtocol(params, SMUDGE)
 		serverShare := cksProtocol.AllocateShare()
 
 		// Create combined h = \sum{hi}
@@ -328,6 +329,45 @@ func decrypt(parms *C.Params, sk *C.Poly, data *C.Data) *C.Ldouble {
 	array.size = C.size_t(len(values))
 
 	return array
+}
+
+//export genSecretKey
+func genSecretKey(parms *C.Params) *C.Poly {
+	params := convCKKSParams(parms)
+
+	// Generate SecretKey
+	keyGen := ckks.NewKeyGenerator(params)
+	secretKey := keyGen.GenSecretKey()
+
+	return convPoly(secretKey.Get())
+}
+
+//export genCKGShare
+func genCKGShare(parms *C.Params, sk *C.Poly, crs *C.Poly) *C.Share {
+	params := convCKKSParams(parms)
+	ckgProtocol := dckks.NewCKGProtocol(params)
+
+	ckgShare := ckgProtocol.AllocateShares()
+	ckgProtocol.GenShare(convRingPoly(sk), convRingPoly(crs), ckgShare)
+	
+	return convShare([]*ring.Poly{ckgShare})
+}
+
+//export genCKSShare
+func genCKSShare(parms *C.Params, sk *C.Poly, data *C.Data) *C.Share {
+	params := convCKKSParams(parms)
+	cksProtocol := dckks.NewCKSProtocol(params, SMUDGE)
+
+	zero := params.NewPolyQ()
+	skp := convRingPoly(sk)
+	
+	cts := convSckksCiphertext(data)
+	cksShares := make([]*ring.Poly, len(cts))
+	for i, ct := range cts {
+		cksProtocol.GenShare(skp, zero, ct, cksShares[i])
+	}
+
+	return convShare(cksShares)
 }
 
 /* DEBUG */
@@ -623,7 +663,7 @@ func convSSckksCiphertext(datas *C.Data, datasSize C.size_t) [][]*ckks.Ciphertex
 
 /// Share
 
-// *C.Share --> []*ringPoly
+// *C.Share --> []*ring.Poly
 func convSRingPoly(share *C.Share) []*ring.Poly {
 	size := int(share.size)
 	list := (*[1<<30]C.Poly)(unsafe.Pointer(share.data))[:size:size]
@@ -635,6 +675,21 @@ func convSRingPoly(share *C.Share) []*ring.Poly {
 	}
 
 	return polys
+}
+
+// []*ring.Poly --> *C.Share
+func convShare(polys []*ring.Poly) *C.Share {
+	share := (*C.Share)(C.malloc(C.sizeof_Share))
+	
+	rps := make([]C.Poly, len(polys))
+	for i, poly := range polys {
+		rps[i] = *convPoly(poly)
+	}
+
+	share.data = (*C.Poly)(&rps[0])
+	share.size = C.size_t(len(rps))
+
+	return share
 }
 
 // (*C.Share, N C.size_t) --> [][]*ring.Poly (N rows, D cols)
