@@ -127,8 +127,8 @@ class FLServer(Server):
                 self.aggregated_update = None
 
                 # reset the selected client address list (to be re-selected)
-                self.selected_client_addrs = []
-                self.selected_client_updates = {}
+                self.selected_clients_by_addr = {}
+                self.selected_clients_updates = {}
 
                 if debug_level >= DEBUG_LEVEL.INFO:
                     TERM.write_info("Sending aggregated update to clients...")
@@ -170,6 +170,7 @@ class FLServer(Server):
         readable_clients_socks, _, _ = select.select(self.selected_clients_by_addr.values(), [], [])
         for sock in readable_clients_socks:
             self.selected_clients_updates[self.selected_clients_by_sock[sock]] = Communication_Handler.recv_msg(sock)
+    
     # Aggregate Updates once the subset of selected clients are ready
     def attempt_to_aggregate_updates(self):
         # check if all clients have provided data.

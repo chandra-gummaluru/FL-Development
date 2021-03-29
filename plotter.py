@@ -2,6 +2,7 @@ import os, csv, sys
 
 import matplotlib
 from matplotlib import pyplot as plt
+from matplotlib.animation import FuncAnimation
 
 import numpy as np
 
@@ -17,7 +18,7 @@ class Plotter():
 
     def animate(self, i):
         data = []
-        with open('test.csv', newline='') as csv_file:
+        with open(self.data_path, newline='') as csv_file:
             reader = csv.reader(csv_file)
             for row in reader:
                 data.append(row)
