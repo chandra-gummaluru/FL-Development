@@ -7,6 +7,8 @@ import (
 	"github.com/ldsec/lattigo/v2/dckks"
 )
 
+// TEST: Implement MPHE (for FL) using Lattigo
+
 func mpheSimulate() {
 	/* Initialization */
 

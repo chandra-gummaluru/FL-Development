@@ -145,10 +145,6 @@ typedef struct { void *data; GoInt len; GoInt cap; } GoSlice;
 extern "C" {
 #endif
 
-extern void mpheTest();
-extern Params* newParams();
-extern Poly* newPoly();
-extern Ciphertext* newCiphertext();
 extern MPHEServer* newMPHEServer();
 extern Poly* genCRS(Params* parms);
 extern Data* colKeySwitch(Params* parms, Data* data, Share* cksShares, size_t cksSize);
@@ -162,12 +158,6 @@ extern Ldouble* decrypt(Params* parms, Poly* sk, Data* data);
 extern Poly* genSecretKey(Params* parms);
 extern Share* genCKGShare(Params* parms, Poly* sk, Poly* crs);
 extern Share* genCKSShare(Params* parms, Poly* sk, Data* data);
-extern void printParams(Params* params);
-extern void printPoly(Poly* p);
-extern void printPolyPair(PolyPair* pp);
-extern void printCiphertext(Ciphertext* c);
-extern void printCiphertext2(Params* parms, Poly* sk, Data* data);
-extern PolyPair* genPublicKey(Params* parms, Poly* sk);
 
 #ifdef __cplusplus
 }

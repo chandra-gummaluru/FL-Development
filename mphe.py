@@ -1,7 +1,9 @@
 from ctypes import *
 import numpy as np
 
-so = cdll.LoadLibrary('./_mphe.so')
+### ctypes Structures + Exported Functions ###
+
+so = cdll.LoadLibrary('./mphe/_mphe.so')
 
 class _Ldouble(Structure):
     _fields_ = [
@@ -27,27 +29,17 @@ class _Params(Structure):
         ('sigma', c_double)
     ]
 
-newParams = so.newParams
-newParams.restype = POINTER(_Params)
-
 class _Poly(Structure):
     _fields_ = [
         ('coeffs', POINTER(_Luint64)),
         ('size', c_size_t)
     ]
 
-newPoly = so.newPoly
-newPoly.restype = POINTER(_Poly)
-
 class _PolyPair(Structure):
     _fields_ = [
         ('p0', _Poly),
         ('p1', _Poly)
     ]
-
-genPublicKey = so.genPublicKey
-genPublicKey.argtypes = [ POINTER(_Params), POINTER(_Poly) ]
-genPublicKey.restype = POINTER(_PolyPair)
 
 class _Ciphertext(Structure):
     _fields_ = [
@@ -56,9 +48,6 @@ class _Ciphertext(Structure):
         ('scale', c_double),
         ('isNTT', c_bool)
     ]
-
-newCiphertext = so.newCiphertext
-newCiphertext.restype = POINTER(_Ciphertext)
 
 class _Data(Structure):
     _fields_ = [
@@ -77,7 +66,6 @@ class _MPHEServer(Structure):
         ('params', _Params),
         ('crs', _Poly),
         ('secretKey', _Poly),
-        
         ('data', _Data),
     ]
 
@@ -139,7 +127,7 @@ _genCKSShare = so.genCKSShare
 _genCKSShare.argtypes = [ POINTER(_Params), POINTER(_Poly), POINTER(_Data) ]
 _genCKSShare.restype = POINTER(_Share)
 
-### Wrapper classes ###
+### Wrapper Classes (pickle-able) ###
 
 class Params:
     def __init__(self, _params):
@@ -218,43 +206,25 @@ class MPHEServer:
         params = self.params.make_structure()
         sk = _Conversion.to_poly(self.secret_key)
         crs = _Conversion.to_poly(self.crs)
-
-        shares = [ None ] * len(ckg_shares)
-
-        for i in range(len(ckg_shares)):
-            shares[i] = _Conversion.to_share(ckg_shares[i])
+        shares_ptr = _Conversion.to_ptr(ckg_shares, _Conversion.to_share, _Share)
         
-        shares_ptr = (_Share * len(shares))(*shares)
-
-        cpk = _colKeyGen(byref(params), byref(sk), byref(crs), shares_ptr, len(shares))
+        cpk = _colKeyGen(byref(params), byref(sk), byref(crs), shares_ptr, len(ckg_shares))
 
         return _Conversion.from_polypair(cpk.contents)
 
     def col_key_switch(self, agg, cks_shares):
         params = self.params.make_structure()
         data = _Conversion.to_data(agg)
+        shares_ptr = _Conversion.to_ptr(cks_shares, _Conversion.to_share, _Share)
 
-        shares = [ None ] * len(cks_shares)
-
-        for i in range(len(cks_shares)):
-            shares[i] = _Conversion.to_share(cks_shares[i])
-        
-        shares_ptr = (_Share * len(cks_shares))(*shares)
-
-        switched_data = _colKeySwitch(byref(params), byref(data), shares_ptr, len(shares))
+        switched_data = _colKeySwitch(byref(params), byref(data), shares_ptr, len(cks_shares))
         self.data = _Conversion.from_data(switched_data.contents)
 
     def aggregate(self, updates):
         params = self.params.make_structure()
+        data_ptr = _Conversion.to_ptr(updates, _Conversion.to_data, _Data)
 
-        data = [ None ] * len(updates)
-
-        for i in range(len(updates)):
-            data[i] = _Conversion.to_data(updates[i])
-        
-        data_ptr = (_Data * len(data))(*data)
-
-        agg = _aggregate(byref(params), data_ptr, len(data))
+        agg = _aggregate(byref(params), data_ptr, len(updates))
 
         return _Conversion.from_data(agg.contents)
 
@@ -265,7 +235,7 @@ class MPHEServer:
         avg_data = _mulByConst(byref(params), byref(data), 1/n)
         self.data = _Conversion.from_data(avg_data.contents)
 
-    # DEBUG
+    # DEBUG: Decrypts its data then prints contents
     def print_data(self):
         params = self.params.make_structure()
         sk = _Conversion.to_poly(self.secret_key)
@@ -274,7 +244,7 @@ class MPHEServer:
         dec_data = _decrypt(byref(params), byref(sk), byref(ct))
         dec_data = _Conversion.to_list(dec_data.contents)
 
-        print('Decrypted SERVER data:', dec_data)
+        print('Decrypted SERVER data:\n\t', dec_data)
 
 class MPHEClient:
     def __init__(self):
@@ -337,8 +307,11 @@ class MPHEClient:
 
         return _Conversion.from_share(cks_share.contents)
 
+# Performs conversion between Structures (which contain pointers) to pickle-able classes
 class _Conversion:
     # (FYI) Convert to numpy array: https://stackoverflow.com/questions/4355524/getting-data-from-ctypes-array-into-numpy
+
+    # Generic array type Structure to list
 
     def to_list(_l):
         l = [ None ] * _l.size
@@ -348,15 +321,26 @@ class _Conversion:
         
         return l
 
-    ### _Luint64
+    def to_list_with_conv(_l, conv):
+        l = [ None ] * _l.size
 
-    def from_luint64(_luint64):
-        l = [ None ] * _luint64.size
-
-        for i in range(_luint64.size):
-            l[i] = _luint64.data[i]
+        for i in range(_l.size):
+            l[i] = conv(_l.data[i])
         
         return l
+
+    def to_ptr(l, conv, t):
+        lt = [ None ] * len(l)
+
+        for i in range(len(l)):
+            lt[i] = conv(l[i])
+        
+        return (t * len(lt))(*lt)
+
+    ### _Luint64 (list of uint64)
+
+    def from_luint64(_luint64):
+        return _Conversion.to_list(_luint64)
 
     def to_luint64(l):
         luint64 = _Luint64()
@@ -366,15 +350,10 @@ class _Conversion:
 
         return luint64
 
-    ### _Ldouble
+    ### _Ldouble (list of double)
 
     def from_ldouble(_ldouble):
-        l = [ None ] * _ldouble.size
-
-        for i in range(_ldouble.size):
-            l[i] = _ldouble.data[i]
-        
-        return l
+        return _Conversion.to_list(_ldouble)
 
     def to_ldouble(l):
         ldouble = _Ldouble()
@@ -384,7 +363,7 @@ class _Conversion:
 
         return _ldouble
     
-    ### _Poly
+    ### _Poly (list of Coefficients (Luint64))
 
     def from_poly(_poly):
         coeffs = [ None ] * _poly.size
@@ -406,7 +385,7 @@ class _Conversion:
 
         return _poly
 
-    ### _PolyPair
+    ### _PolyPair (list[2] of Poly)
 
     def from_polypair(_pp):
         pp = [ None ] * 2
@@ -428,15 +407,10 @@ class _Conversion:
 
         return _pp
 
-    ### _Share
+    ### _Share (list of Poly)
 
-    def from_share(_share):
-        share = [ None ] * _share.size
-
-        for i in range(_share.size):
-            share[i] = _Conversion.from_poly(_share.data[i])
-        
-        return share
+    def from_share(_share):        
+        return _Conversion.to_list_with_conv(_share, _Conversion.from_poly)
 
     def to_share(share):
         list_poly = [ None ] * len(share)
@@ -450,15 +424,10 @@ class _Conversion:
 
         return _share
 
-    ### _Data
+    ### _Data (list of Ciphertext)
 
     def from_data(_data):
-        data = [ None ] * _data.size
-
-        for i in range(_data.size):
-            data[i] = Ciphertext(_data.data[i])
-        
-        return data
+        return _Conversion.to_list_with_conv(_data, Ciphertext)
     
     def to_data(data):
         list_ciphertext = [ None ] * len(data)
@@ -472,9 +441,7 @@ class _Conversion:
 
         return _data
 
-# DEBUG
-printCiphertext2 = so.printCiphertext2
-printCiphertext2.argtypes = [ POINTER(_Params), POINTER(_Poly), POINTER(_Data) ]
+### Network Communication Simulation ###
 
 import pickle
 
@@ -482,12 +449,13 @@ def simulate_network_comm(data):
     pdata = pickle.dumps(data)
     return pickle.loads(pdata)
 
+### MPHE Simulation Test ###
 
 if __name__ == '__main__':
     ## Initialization ##
 
     server = MPHEServer()
-    server.encrypt([ 0.0, 0.0 ])
+    server.encrypt([ 0.0, 0.0, 1.0, -1.0 ])
 
     params = server.params
     secret_key = server.secret_key
@@ -498,11 +466,11 @@ if __name__ == '__main__':
 
     client1 = MPHEClient()
     client1.define_scheme(params, server.secret_key)
-    client1.update = np.array([ 0.0, 1.0 ])
+    client1.update = np.array([ 0.0, 1.0 , 1.0, 0.0])
 
     client2 = MPHEClient()
     client2.define_scheme(params, server.secret_key)
-    client2.update = np.array([ -1.0, 0.0 ])
+    client2.update = np.array([ -1.0, 0.0, 1.0, 0.0 ])
 
     # DEBUG: Initial model
     server.print_data()
