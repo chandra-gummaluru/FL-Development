@@ -3,11 +3,17 @@ import torchvision
 import torchvision.transforms as transforms
 from torch.utils.data import DataLoader
 
-import csv
+import numpy as np
+np.set_printoptions(formatter={'float': lambda x: "{0:0.2f}".format(x)})
+
+import utils
+from utils import DEBUG_LEVEL, TERM
+
+debug_level = DEBUG_LEVEL.INFO
+
+import sys, csv
 
 import model1
-
-DEBUG = True
 
 # Class encapsulating Training program for the Server's model
 class ServerTrainer():
@@ -48,8 +54,9 @@ class ServerTrainer():
         # Compute Accuracy (test)
         self.test_acc.append(self.compute_accuracy(self.test_loader))
 
-        if DEBUG:
-            print('(iteration, accuracy): ({}, {})'.format(len(self.test_acc) - 1, self.test_acc[-1]))
+        if debug_level >= DEBUG_LEVEL.INFO:
+            TERM.write('\tEpoch ' + str(len(self.test_acc) - 1) + '\n')
+            TERM.write('\tClass Accuracies: {}'.format(100 * np.array(self.test_acc[-1])))
 
         # Occasionally save current test accuracy
         self.save_to_csv(self.test_acc, './train_curves/server.csv')
