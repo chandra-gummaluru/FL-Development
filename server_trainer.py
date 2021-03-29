@@ -68,7 +68,7 @@ class ServerTrainer():
             TERM.write('\tClass Accuracies: {}'.format(100 * np.array(self.test_acc[-1])))
 
         # Occasionally save current test accuracy
-        self.save_to_csv(acc, './train_curves/server.csv')
+        self.save_to_csv(acc, './train_curves/Server.csv')
 
     ### Helper Functions ###
 
