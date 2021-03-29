@@ -1,52 +1,33 @@
-import matplotlib.pyplot as plt
-import pandas as pd
-import os
+import os, csv, sys
+
+import matplotlib
+from matplotlib import pyplot as plt
 
 import numpy as np
 
-# Plots each entry in data (blocking for each plot)
-def plot_data(df, title, classes=None):
-    # Default classes to plot (all of them)
-    if classes == None:
-        classes = np.arange(10) #df.columns.values
+class Plotter():
+    def __init__(self, data_path, interval = 5000):
+        self.data_path = data_path
+        self.interval = interval
 
-    data = np.array(df.values)[:,classes]
+    def plot(self):
+        fig = plt.figure()
+        ani = FuncAnimation(plt.gcf(), self.animate, interval = self.interval)
+        plt.show()
 
-    plt.plot(range(1, data.shape[0] + 1), data)
+    def animate(self, i):
+        data = []
+        with open('test.csv', newline='') as csv_file:
+            reader = csv.reader(csv_file)
+            for row in reader:
+                data.append(row)
+            data = np.array(data, dtype=np.float32)
+            plt.plot(range(len(data)), data)
 
-    plt.xlabel('Iteration')
-    plt.ylabel('Accuracy')
-
-    plt.title(title)
-    plt.legend(tuple(classes), loc='upper left')
-
-    plt.savefig('./train_curves/{}.png'.format(title), bbox_inches='tight')
-    plt.show()
-        
-
+# TEST
 if __name__ == '__main__':
-    clients = [[3, 5, 7, 9], [0, 1, 8], [2, 4, 6]]
+    data_path = sys.argv[1]
+    interval = int(sys.argv[2])
 
-    # Plot server curve
-    server_path = './train_curves/server.csv'
-
-    if os.path.exists(server_path):
-        df = pd.read_csv(server_path)        
-        plot_data(df, 'Server Test Accuracy (per class)')
-
-    # Plot client curves
-    for digits in clients:
-        train_path = './train_curves/client{}_train.csv'.format(digits)
-        test_path = './train_curves/client{}_test.csv'.format(digits)
-
-        # Verify the client exists
-        if (not os.path.exists(train_path)) or (not os.path.exists(test_path)):
-            continue
-
-        # Plot client's train accuracy curve
-        df = pd.read_csv(train_path)
-        plot_data(df, 'Client{} Train Accuracy (per class)'.format(digits), classes=digits)
-
-        # Plot client's test accurcay curve
-        df = pd.read_csv(test_path)
-        plot_data(df, 'Client{} Test Accuracy (per class)'.format(digits))
+    plotter = Plotter(data_path, interval = interval)
+    plotter.plot()

@@ -8,11 +8,13 @@ import client_trainer
 debug_level = DEBUG_LEVEL.INFO
 
 class Client():
-    def __init__(self, server):
+    def __init__(self, server, name = None):
         # Socket for communication
         self.server = server
         self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.connected = False
+
+        self.name = 'anon_client' if not name else name
 
     # Attempt to connect to the Server.
     def attempt_to_connect(self, TIMEOUT):
