@@ -3,22 +3,22 @@ import numpy as np
 
 so = cdll.LoadLibrary('./_mphe.so')
 
-class Ldouble(Structure):
+class _Ldouble(Structure):
     _fields_ = [
         ('data', POINTER(c_double)),
         ('size', c_size_t)
     ]
 
-class Luint64(Structure):
+class _Luint64(Structure):
     _fields_ = [
         ('data', POINTER(c_ulonglong)),
         ('size', c_size_t)
     ]
 
-class Params(Structure):
+class _Params(Structure):
     _fields_ = [
-        ('qi', Luint64),
-        ('pi', Luint64),
+        ('qi', _Luint64),
+        ('pi', _Luint64),
 
         ('logN', c_int),
         ('logSlots', c_int),
@@ -28,272 +28,310 @@ class Params(Structure):
     ]
 
 newParams = so.newParams
-newParams.restype = POINTER(Params)
+newParams.restype = POINTER(_Params)
 
-class Poly(Structure):
+class _Poly(Structure):
     _fields_ = [
-        ('coeffs', POINTER(Luint64)),
+        ('coeffs', POINTER(_Luint64)),
         ('size', c_size_t)
     ]
 
 newPoly = so.newPoly
-newPoly.restype = POINTER(Poly)
+newPoly.restype = POINTER(_Poly)
 
-class PolyPair(Structure):
+class _PolyPair(Structure):
     _fields_ = [
-        ('p0', Poly),
-        ('p1', Poly)
+        ('p0', _Poly),
+        ('p1', _Poly)
     ]
 
 genPublicKey = so.genPublicKey
-genPublicKey.argtypes = [ POINTER(Params), POINTER(Poly) ]
-genPublicKey.restype = POINTER(PolyPair)
+genPublicKey.argtypes = [ POINTER(_Params), POINTER(_Poly) ]
+genPublicKey.restype = POINTER(_PolyPair)
 
-class Ciphertext(Structure):
+class _Ciphertext(Structure):
     _fields_ = [
-        ('value', POINTER(Poly)),
+        ('value', POINTER(_Poly)),
         ('size', c_size_t),
         ('scale', c_double),
         ('isNTT', c_bool)
     ]
 
 newCiphertext = so.newCiphertext
-newCiphertext.restype = POINTER(Ciphertext)
+newCiphertext.restype = POINTER(_Ciphertext)
 
-class Data(Structure):
+class _Data(Structure):
     _fields_ = [
-        ('data', POINTER(Ciphertext)),
+        ('data', POINTER(_Ciphertext)),
         ('size', c_size_t)
     ]
 
-class Share(Structure):
+class _Share(Structure):
     _fields_ = [
-        ('data', POINTER(Poly)),
+        ('data', POINTER(_Poly)),
         ('size', c_size_t)
     ]
 
-class MPHEServer(Structure):
+class _MPHEServer(Structure):
     _fields_ = [
-        ('params', Params),
-        ('crs', Poly),
-        ('secretKey', Poly),
+        ('params', _Params),
+        ('crs', _Poly),
+        ('secretKey', _Poly),
         
-        ('data', Data),
+        ('data', _Data),
     ]
 
-newMPHEServer = so.newMPHEServer
-newMPHEServer.restype = POINTER(MPHEServer)
+_newMPHEServer = so.newMPHEServer
+_newMPHEServer.restype = POINTER(_MPHEServer)
 
-genCRS = so.genCRS
-genCRS.argtypes = [ POINTER(MPHEServer) ]
-genCRS.restype = POINTER(Poly)
+_genCRS = so.genCRS
+_genCRS.argtypes = [ POINTER(_MPHEServer) ]
+_genCRS.restype = POINTER(_Poly)
 
-colKeySwitch = so.colKeySwitch
-colKeySwitch.argtypes = [ POINTER(MPHEServer), POINTER(Share), c_size_t ]
+_colKeySwitch = so.colKeySwitch
+_colKeySwitch.argtypes = [ POINTER(_MPHEServer), POINTER(_Share), c_size_t ]
 
-colKeyGen = so.colKeyGen
-colKeyGen.argtypes = [ POINTER(MPHEServer), POINTER(Share), c_size_t ]
-colKeyGen.restype = POINTER(PolyPair)
+_colKeyGen = so.colKeyGen
+_colKeyGen.argtypes = [ POINTER(_MPHEServer), POINTER(_Share), c_size_t ]
+_colKeyGen.restype = POINTER(_PolyPair)
 
-aggregate = so.aggregate
-aggregate.argtypes = [ POINTER(MPHEServer), POINTER(Data), c_size_t ]
-aggregate.restype = POINTER(Data)
+_aggregate = so.aggregate
+_aggregate.argtypes = [ POINTER(_MPHEServer), POINTER(_Data), c_size_t ]
+_aggregate.restype = POINTER(_Data)
 
-average = so.average
-average.argtypes = [ POINTER(MPHEServer), c_int ]
+_average = so.average
+_average.argtypes = [ POINTER(_MPHEServer), c_int ]
 
-class MPHEClient(Structure):
+class _MPHEClient(Structure):
     _fields_ = [
-        ('params', Params),
-        ('crs', Poly),
-        ('secretKey', Poly),
-        ('decryptionKey', Poly)
+        ('params', _Params),
+        ('crs', _Poly),
+        ('secretKey', _Poly),
+        ('decryptionKey', _Poly)
     ]
 
 newMPHEClient = so.newMPHEClient
-newMPHEClient.restype = POINTER(MPHEClient)
+newMPHEClient.restype = POINTER(_MPHEClient)
 
-encrypt = so.encrypt
-encrypt.argtypes = [ POINTER(Params), POINTER(PolyPair), POINTER(c_double), c_size_t ]
-encrypt.restype = POINTER(Data)
+_encrypt = so.encrypt
+_encrypt.argtypes = [ POINTER(_Params), POINTER(_PolyPair), POINTER(c_double), c_size_t ]
+_encrypt.restype = POINTER(_Data)
 
-decrypt = so.decrypt
-decrypt.argtypes = [ POINTER(Params), POINTER(Poly), POINTER(Data) ]
-decrypt.restype = POINTER(Ldouble)
+_decrypt = so.decrypt
+_decrypt.argtypes = [ POINTER(_Params), POINTER(_Poly), POINTER(_Data) ]
+_decrypt.restype = POINTER(_Ldouble)
 
-genSecretKey = so.genSecretKey
-genSecretKey.argtypes = [ POINTER(Params) ]
-genSecretKey.restype = POINTER(Poly)
+_genSecretKey = so.genSecretKey
+_genSecretKey.argtypes = [ POINTER(_Params) ]
+_genSecretKey.restype = POINTER(_Poly)
 
-genCKGShare = so.genCKGShare
-genCKGShare.argtypes = [ POINTER(Params), POINTER(Poly), POINTER(Poly) ]
-genCKGShare.restype = POINTER(Share)
+_genCKGShare = so.genCKGShare
+_genCKGShare.argtypes = [ POINTER(_Params), POINTER(_Poly), POINTER(_Poly) ]
+_genCKGShare.restype = POINTER(_Share)
 
-genCKSShare = so.genCKSShare
-genCKSShare.argtypes = [ POINTER(Params), POINTER(Poly), POINTER(Data) ]
-genCKSShare.restype = POINTER(Share)
+_genCKSShare = so.genCKSShare
+_genCKSShare.argtypes = [ POINTER(_Params), POINTER(_Poly), POINTER(_Data) ]
+_genCKSShare.restype = POINTER(_Share)
+
+### Wrapper classes ###
+
+class Params:
+    def __init__(self, _params):
+        self.qi = _Conversion.from_luint64(_params.qi)
+        self.pi = _Conversion.from_luint64(_params.pi)
+        self.logN = _params.logN
+        self.logSlots = _params.logSlots
+        self.scale = _params.scale
+        self.sigma = _params.sigma
+    
+    def make_structure(self):
+        _params = _Params()
+        
+        _params.qi = _Conversion.to_luint64(self.qi)
+        _params.pi = _Conversion.to_luint64(self.pi)
+        _params.logN = self.logN
+        _params.logSlots = self.logSlots
+        _params.scale = self.scale
+        _params.sigma = self.sigma
+
+        return _params
+
+class Ciphertext:
+    def __init__(self, _ct):
+        self.value = [ None ] * _ct.size
+        
+        for i in range(_ct.size):
+            self.value[i] = _Conversion.from_poly(_ct.value[i])
+        
+        self.scale = _ct.scale
+        self.isNTT = _ct.isNTT
+    
+    def make_structure(self):
+        _ct = _Ciphertext()
+
+        value = [ None ] * len(self.value)
+        
+        for i in range(len(self.value)):
+            value[i] = _Conversion.to_poly(self.value[i])
+        
+        _ct.size = len(value)
+        _ct.value = (_Poly * _ct.size)(*value)
+        _ct.scale = self.scale
+        _ct.isNTT = self.isNTT
+
+        return _ct
+
+class MPHEServer:
+    def __init__(self):
+        _server_ptr = _newMPHEServer()
+        _server = _server_ptr.contents
+
+        self.params = Params(_server.params)
+        self.crs = _Conversion.from_poly(_server.crs)
+        self.secret_key = _Conversion.from_poly(_server.secretKey)
+        self.data = []
+
+class _Conversion:
+    # (FYI) Convert to numpy array: https://stackoverflow.com/questions/4355524/getting-data-from-ctypes-array-into-numpy
+
+    def to_list(_l):
+        l = [ None ] * _l.size
+
+        for i in range(_l.size):
+            l[i] = _l.data[i]
+        
+        return l
+
+    ### _Luint64
+
+    def from_luint64(_luint64):
+        l = [ None ] * _luint64.size
+
+        for i in range(_luint64.size):
+            l[i] = _luint64.data[i]
+        
+        return l
+
+    def to_luint64(l):
+        luint64 = _Luint64()
+
+        luint64.size = len(l)
+        luint64.data = (c_ulonglong * luint64.size)(*l)
+
+        return luint64
+
+    ### _Ldouble
+
+    def from_ldouble(_ldouble):
+        l = [ None ] * _ldouble.size
+
+        for i in range(_ldouble.size):
+            l[i] = _ldouble.data[i]
+        
+        return l
+
+    def to_ldouble(l):
+        ldouble = _Ldouble()
+
+        ldouble.size = len(l)
+        ldouble.data = (c_ulonglong * ldouble.size)(*l)
+
+        return _ldouble
+    
+    ### _Poly
+
+    def from_poly(_poly):
+        coeffs = [ None ] * _poly.size
+
+        for i in range(_poly.size):
+            coeffs[i] = _Conversion.from_luint64(_poly.coeffs[i])
+        
+        return coeffs
+    
+    def to_poly(coeffs):
+        list_luint64 = [ None ] * len(coeffs)
+
+        for i in range(len(coeffs)):
+            list_luint64[i] = _Conversion.to_luint64(coeffs[i])
+        
+        _poly = _Poly()
+        _poly.size = len(list_luint64)
+        _poly.coeffs = (_Luint64 * _poly.size)(*list_luint64)
+
+        return _poly
+
+    ### _PolyPair
+
+    def from_polypair(_pp):
+        pp = [ None ] * 2
+
+        pp[0] = _Conversion.from_poly(_pp.p0)
+        pp[1] = _Conversion.from_poly(_pp.p1)
+        
+        return pp
+
+    def to_polypair(pp):        
+        _pp = _PolyPair()
+
+        if len(pp) != 2:
+            print('ERROR: Only a list of size 2 makes a pair (not {})'.format(len(pp)))
+            return None
+
+        _pp.p0 = _Conversion.to_poly(pp[0])
+        _pp.p1 = _Conversion.to_poly(pp[1])
+
+        return _pp
+
+    ### _Data
+
+    def from_data(_data):
+        data = [ None ] * _data.size
+
+        for i in range(_data.size):
+            data[i] = Ciphertext(_data.data[i])
+        
+        return data
+    
+    def to_data(data):
+        list_ciphertext = [ None ] * len(data)
+
+        for i in range(len(data)):
+            list_ciphertext[i] = data[i].make_structure()
+        
+        _data = _Data()
+        _data.size = len(list_ciphertext)
+        _data.data = (_Ciphertext * _data.size)(*list_ciphertext)
+
+        return _data
 
 # DEBUG
 printCiphertext2 = so.printCiphertext2
-printCiphertext2.argtypes = [ POINTER(Params), POINTER(Poly), POINTER(Data) ]
+printCiphertext2.argtypes = [ POINTER(_Params), POINTER(_Poly), POINTER(_Data) ]
 
-import time
-
-def pLuint64(l):
-    data = []
-    for i in range(l.size):
-        data.append(l.data[i])
-    
-    return data
-
-def pPoly(p):
-    coeffs = []
-    for i in range(p.size):
-        coeff = pLuint64(p.coeffs[i])
-        coeffs.append(coeff)
-    return coeffs
-
-class pPolyPair:
-    def __init__(self, pp):
-        self.p0 = pPoly(pp.p0)
-        self.p1 = pPoly(pp.p1)
-
-# p_ --> _
-def pL_to_L(pL):
-    l = Luint64()
-    l.size = len(pL)
-    l.data = (c_ulonglong * l.size)(*pL)
-
-    return l
-
-def pP_to_Poly(pP):
-    coeffs = []
-    for coeff in pP:
-        c = pL_to_L(coeff)
-        coeffs.append(c)
-
-    p = Poly()
-    p.size = len(coeffs)
-    p.coeffs = (Luint64 * p.size)(*coeffs)
-
-    return p
-    
-def pPP_to_PolyPair(pPP):
-    pp = PolyPair()
-
-    pp.p0 = pP_to_Poly(pPP.p0)
-    pp.p1 = pP_to_Poly(pPP.p1)
-
-    return pp
 
 if __name__ == '__main__':
-    # # so.mpheTest()
-
-    # ### TEST: Params ###
-    # params = so.newParams()
-    # print('Params members:', dir(params.contents))
-
-    # # # Convert to numpy array: https://stackoverflow.com/questions/4355524/getting-data-from-ctypes-array-into-numpy
-    # qi = np.ctypeslib.as_array(params.contents.qi.data, shape=(params.contents.qi.size,))
-    # # print('qi:', qi, 'size:', params.contents.qi.size)
-
-    # pi = np.ctypeslib.as_array(params.contents.pi.data, shape=(params.contents.pi.size,))
-    # # print('pi:', pi)
-
-    # # # Print contents
-    # # print('PYTHON Params:', params.contents.logN, params.contents.logSlots, params.contents.scale, params.contents.sigma)
-
-    # # # Update a member
-    # # params.contents.logN = 0
-    # # print('Updated Params:', params.contents.logN, params.contents.logSlots, params.contents.scale, params.contents.sigma)
-
-    # ### TEST: Creating Params from basic Python types ###
-    # p = Params()
-    # data1 = qi.tolist()
-    # data2 = pi.tolist()
-
-    # p.qi = Luint64()
-    # p.qi.data = (c_ulonglong * len(data1))(*data1)
-    # p.qi.size = len(data1)
-
-    # p.pi = Luint64()
-    # p.pi.data = (c_ulonglong * len(data2))(*data2)
-    # p.pi.size = len(data2)
-
-    # p.logN = params.contents.logN
-    # p.logSlots = params.contents.logSlots
-    # p.scale = params.contents.scale
-    # p.sigma = params.contents.sigma
-
-    # so.printParams(pointer(p))
-
-    # ### TEST: Poly ###
-    # pp = newPoly()
-    # # print('Poly members:', dir(pp.contents))
-    # print('Poly:', pp.contents.coeffs, pp.contents.size)
-    # coeffs = []
-    # for i in range(pp.contents.size):
-    #     npCoeff = np.ctypeslib.as_array(pp.contents.coeffs[i].data, shape=(pp.contents.coeffs[i].size,))
-    #     coeffs.append(npCoeff.tolist())
-    
-    # print('Poly coeffs casted to a list:', len(coeffs), len(coeffs[0]))
-    # so.printPoly(pp)
-
-    ### TEST: Ciphertext ###
-    # ct = newCiphertext()
-    # print('Ciphertext:', ct.contents.value, ct.contents.size, ct.contents.scale, ct.contents.isNTT)
-    # so.printCiphertext(ct)
-
-    ### TEST: MPHEServer ###
-    server = newMPHEServer()
-    # print('Server:', server.contents.params, server.contents.crs)
-    # CRS = server.contents.crs
-    # CRS = genCRS(server).contents
-    # crs = []
-    # for i in range(server.contents.crs.size):
-    #     npCoeff = np.ctypeslib.as_array(CRS.coeffs[i].data, shape=(CRS.coeffs[i].size,))
-    #     crs.append(npCoeff.tolist())
-    # print('Poly coeffs casted to a list:', len(crs), len(crs[0]))
-    # so.printPoly(byref(server.contents.secretKey))
-
-    ### TEST: MPHEClient ###
-    # client = newMPHEClient()
-    # print('Client:', client.contents.params, client.contents.crs, client.contents.secretKey)
+    # Instantiate server
+    server = MPHEServer()
 
     data = [ 0.0, 1.5, 10000, 4.232425, -3.111111111111 ]
+    print('Original data:', data)
     data_in = (c_double * len(data))(*data)
 
-    params = byref(server.contents.params)
-    sk = server.contents.secretKey
+    params = server.params.make_structure()
+    sk = _Conversion.to_poly(server.secret_key)
 
-    pk = genPublicKey(params, sk)
+    # Generate PK and cache on Python
+    pk = genPublicKey(byref(params), byref(sk))
+    pk = _Conversion.from_polypair(pk.contents)
+    pk = _Conversion.to_polypair(pk)
 
-    # PK to Python
-    PK = pPolyPair(pk.contents)
-    print('Python PP:', PK, type(PK.p0[0]), PK.p0[0][0])
-    pk2 = pPP_to_PolyPair(PK)
-    print('ctypes PP:', pk2, pk2.p0, pk2.p0.coeffs, pk2.p0.coeffs.contents.data, pk2.p0.coeffs.contents.data[0])
-    print('')
+    # Encrypt to CT and cache on Python
+    ct = _encrypt(params, byref(pk), data_in, len(data))
+    ct = _Conversion.from_data(ct.contents)
+    ct = _Conversion.to_data(ct)
+    
+    printCiphertext2(byref(params), byref(sk), ct)
 
-    SK = pPoly(sk)
-    print('Python P:', type(SK), type(SK[0]), SK[0][0])
-    sk2 = pP_to_Poly(SK)
-    print('ctypes PP:', sk2, sk2.coeffs, sk2.coeffs.contents.data, sk2.coeffs.contents.data[0])
-    print('')
-
-    # print('\nRAN ZERO\n')
-    # # so.printPolyPair(pk)
-    ct = encrypt(params, byref(pk2), data_in, len(data))
-    print('\nRAN ONCE\n')
-    # # so.printPolyPair(pk)
-    # # ct = encrypt(params, pk, data_in, len(data))
-    # print('\nRAN TWICE\n')
-
-    # # so.printPoly(sk)
-    printCiphertext2(params, byref(sk2), ct)
-
-    data_out = decrypt(params, byref(sk2), ct)
-    rec_data = []
-    for i in range(data_out.contents.size):
-        rec_data.append(data_out.contents.data[i])
+    data_out = _decrypt(byref(params), byref(sk), ct)
+    rec_data = _Conversion.to_list(data_out.contents)
     print('Enc --> Dec:', rec_data)
