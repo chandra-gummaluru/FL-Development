@@ -1,18 +1,22 @@
-import utils
-from utils import DEBUG_LEVEL, TERM
-from collections import OrderedDict
+import sys, time, csv
+
 import torch
 import torchvision
 import torchvision.transforms as transforms
 import torch.nn as nn
 from torch.utils.data import DataLoader
 
-import sys, time, csv
+import model1
+
+import matplotlib
+from matplotlib import pyplot as plt
+
 import numpy as np
 
-debug_level = DEBUG_LEVEL.INFO
+import utils
+from utils import DEBUG_LEVEL, TERM
 
-import model1
+debug_level = DEBUG_LEVEL.INFO
 
 class ClientTrainer():
     def __init__(self, local_client_digits, use_cuda=True):
@@ -43,10 +47,6 @@ class ClientTrainer():
 
         # Instantiate model
         self.model = model1.Net()
-
-        # Train/Test Curves
-        self.train_acc = [ ['0', '1', '2', '3', '4', '5', '6', '7', '8', '9'] ]
-        self.test_acc = [ ['0', '1', '2', '3', '4', '5', '6', '7', '8', '9'] ]
 
         # Enable CUDA
         self.use_cuda = use_cuda
@@ -96,20 +96,18 @@ class ClientTrainer():
 
             train_acc_list, train_acc  = self.evaluate_accuracy(self.train_loader)
             test_acc_list, test_acc = self.evaluate_accuracy(self.test_loader)
-            self.train_acc.append(train_acc_list)
-            self.test_acc.append(test_acc_list)
 
             if debug_level >= DEBUG_LEVEL.INFO:
                 TERM.write('\tTraining Accuracy: {0:0.2f}'.format(train_acc))
                 TERM.write('\tTesting Accuracy: {0:0.2f}'.format(test_acc))
+
+            with open('test.csv', 'a', newline='') as csv_file:
+                writer = csv.writer(csv_file)
+                writer.writerow(train_acc_list)
         end = time.time()
 
         if debug_level >= DEBUG_LEVEL.INFO:
             TERM.write('\t%0.2f minutes' %((end - start) / 60))
-
-        # Save train/test accuracy after training
-        self.save_to_csv(self.train_acc, './train_curves/client{}_train.csv'.format(self.digits))
-        self.save_to_csv(self.test_acc, './train_curves/client{}_test.csv'.format(self.digits))
 
 
     ### Helper Functions ###
@@ -149,12 +147,6 @@ class ClientTrainer():
 
         acc = 100 * correct_by_class.sum() / total_by_class.sum()
         return (correct_by_class / total_by_class).cpu().tolist(), float(acc.cpu())
-
-    # Save data to CSV file
-    def save_to_csv(self, data, file_path):
-        with open(file_path, 'w+', newline='') as csv_file:
-            writer = csv.writer(csv_file)
-            writer.writerows(data)
 
 
 # TEST

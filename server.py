@@ -3,9 +3,8 @@ from random import sample
 
 import utils
 from utils import DEBUG_LEVEL, TERM, Communication_Handler
-from collections import OrderedDict
+
 import server_trainer
-import compressor
 
 debug_level = DEBUG_LEVEL.INFO
 
@@ -112,9 +111,11 @@ class FLServer(Server):
 
             # wait for each client's update and then aggregate.
             while (self.aggregated_update is None) and time.time() - start < self.TIMEOUT:
+
                 compressed_update, addr = self.wait_for_next_update()
                 # decompress the update here.
                 decompressed_update = self.compressor.decompress(compressed_update)
+
                 # cache the decompressed up.
                 self.selected_clients_updates[addr] = decompressed_update
                 self.attempt_to_aggregate_updates()
@@ -133,8 +134,8 @@ class FLServer(Server):
                 self.aggregated_update = None
 
                 # reset the selected client address list (to be re-selected)
-                self.selected_client_addrs = []
-                self.selected_client_updates = {}
+                self.selected_clients_by_addr = {}
+                self.selected_clients_updates = {}
 
                 if debug_level >= DEBUG_LEVEL.INFO:
                     TERM.write_info("Sending aggregated update to clients...")
@@ -184,9 +185,8 @@ class FLServer(Server):
     def attempt_to_aggregate_updates(self):
         # check if all clients have provided data.
         if len(self.selected_clients_updates) == len(self.selected_clients_by_addr):
-            updates = self.selected_clients_updates.values()
             # Aggregate the updates.
-            self.aggregated_update = self.trainer.aggregate(updates)
+            self.aggregated_update = self.trainer.aggregate(self.selected_clients_updates.values())
 
     # Update server model (centralized model)
     def update_model(self, aggregated_update):

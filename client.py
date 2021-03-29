@@ -1,20 +1,20 @@
 import time, sys, multiprocessing, errno, socket
-import torch.nn as nn
-import torch.nn.functional as F
+
 import utils
 from utils import DEBUG_LEVEL, TERM, Communication_Handler
 
 import client_trainer
-import compressor
 
 debug_level = DEBUG_LEVEL.INFO
 
 class Client():
-    def __init__(self, server):
+    def __init__(self, server, name = None):
         # Socket for communication
         self.server = server
         self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.connected = False
+
+        self.name = 'anon_client' if not name else name
 
     # Attempt to connect to the Server.
     def attempt_to_connect(self, TIMEOUT):

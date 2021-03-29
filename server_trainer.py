@@ -7,10 +7,7 @@ import torch.nn as nn
 import numpy as np
 from collections import OrderedDict
 
-
 import numpy as np
-
-
 np.set_printoptions(formatter={'float': lambda x: "{0:0.2f}".format(x)})
 
 import utils
@@ -63,14 +60,15 @@ class ServerTrainer():
         self.model.load_state_dict(aggregate_update)
 
         # Compute Accuracy (test)
-        self.test_acc.append(self.compute_accuracy(self.test_loader))
+        acc = self.compute_accuracy(self.test_loader)
+        self.test_acc.append(acc)
 
         if debug_level >= DEBUG_LEVEL.INFO:
             TERM.write('\tEpoch ' + str(len(self.test_acc) - 1) + '\n')
             TERM.write('\tClass Accuracies: {}'.format(100 * np.array(self.test_acc[-1])))
 
         # Occasionally save current test accuracy
-        self.save_to_csv(self.test_acc, './train_curves/server.csv')
+        self.save_to_csv(acc, './train_curves/server.csv')
 
     ### Helper Functions ###
 
@@ -133,7 +131,6 @@ class ServerTrainer():
 
     # Save data to CSV file
     def save_to_csv(self, data, file_path):
-        with open(file_path, 'w+', newline='') as csv_file:
+        with open(file_path, 'a', newline='') as csv_file:
             writer = csv.writer(csv_file)
-            writer.writerows(data)
-            
+            writer.writerow(data)
