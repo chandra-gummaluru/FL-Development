@@ -154,7 +154,7 @@ extern Poly* genCRS(Params* parms);
 extern Data* colKeySwitch(Params* parms, Data* data, Share* cksShares, size_t cksSize);
 extern PolyPair* colKeyGen(Params* sparams, Poly* ssk, Poly* scrs, Share* ckgShares, size_t ckgSize);
 extern Data* aggregate(Params* parms, Data* datas, size_t datasSize);
-extern void average(MPHEServer* server, int n);
+extern Data* mulByConst(Params* parms, Data* data, double cte);
 extern MPHEClient* newMPHEClient();
 extern Data* encryptFromPk(Params* parms, PolyPair* pk, double* array, size_t arraySize);
 extern Data* encryptFromSk(Params* parms, Poly* sk, double* array, size_t arraySize);

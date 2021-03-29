@@ -100,8 +100,9 @@ _aggregate = so.aggregate
 _aggregate.argtypes = [ POINTER(_Params), POINTER(_Data), c_size_t ]
 _aggregate.restype = POINTER(_Data)
 
-_average = so.average
-_average.argtypes = [ POINTER(_MPHEServer), c_int ]
+_mulByConst = so.mulByConst
+_mulByConst.argtypes = [ POINTER(_Params), POINTER(_Data), c_double ]
+_mulByConst.restype = POINTER(_Data)
 
 class _MPHEClient(Structure):
     _fields_ = [
@@ -194,7 +195,7 @@ class MPHEServer:
         self.params = Params(_server.params)
         self.crs = _Conversion.from_poly(_server.crs)
         self.secret_key = _Conversion.from_poly(_server.secretKey)
-        self.data = []
+        self.data = []  # NOTE: always have this as decryptable by secret_key
     
     def encrypt(self, data):
         params = self.params.make_structure()
@@ -229,9 +230,9 @@ class MPHEServer:
 
         return _Conversion.from_polypair(cpk.contents)
 
-    def col_key_switch(self, cks_shares):
+    def col_key_switch(self, agg, cks_shares):
         params = self.params.make_structure()
-        data = _Conversion.to_data(self.data)
+        data = _Conversion.to_data(agg)
 
         shares = [ None ] * len(cks_shares)
 
@@ -256,6 +257,13 @@ class MPHEServer:
         agg = _aggregate(byref(params), data_ptr, len(data))
 
         return _Conversion.from_data(agg.contents)
+
+    def average(self, n):
+        params = self.params.make_structure()
+        data = _Conversion.to_data(self.data)
+
+        avg_data = _mulByConst(byref(params), byref(data), 1/n)
+        self.data = _Conversion.from_data(avg_data.contents)
 
     # DEBUG
     def print_data(self):
@@ -470,54 +478,46 @@ printCiphertext2.argtypes = [ POINTER(_Params), POINTER(_Poly), POINTER(_Data) ]
 
 
 if __name__ == '__main__':
-    # Initialization
+    ## Initialization ##
 
     server = MPHEServer()
     server.encrypt([ 0.0, 0.0 ])
 
     client1 = MPHEClient()
     client1.define_scheme(server.params, server.secret_key)
-    client1.update = np.array([ 0.0, 0.0 ])
+    client1.update = np.array([ 0.0, 1.0 ])
 
     client2 = MPHEClient()
     client2.define_scheme(server.params, server.secret_key)
-    client2.update = np.array([ 0.0, 0.0 ])
+    client2.update = np.array([ -1.0, 0.0 ])
 
     # DEBUG: Initial model
     server.print_data()
 
-    # Simulate MPHE Iterations
+    ## Simulate MPHE Iterations ##
 
-    max_iters = 1
+    max_iters = 3
 
     for i in range(max_iters):
         print('\nITERATION {}\n'.format(i))
 
-        # Server sends ecnrypted model to Clients
+        ## Server sends ecnrypted model to Clients ##
 
         encrypted_model = server.data
         crs = server.gen_crs()
 
-        # Clients decrypt + train
+        ## Clients decrypt + train ##
 
         client1.crs = crs
         client2.crs = crs
 
         client1.data = client1.decrypt(encrypted_model)
-        print('CLIENT 1 received:', client1.data)
         client2.data = client2.decrypt(encrypted_model)
-        print('CLIENT 2 received:', client2.data)
-
-        print('')
 
         client1.data = (np.array(client1.data) + client1.update).tolist()
-        print('CLIENT 1 updated to:', client1.data)
         client2.data = (np.array(client2.data) + client2.update).tolist()
-        print('CLIENT 2 updated to:', client2.data)
 
-        print('')
-
-        # Collective Key Generation
+        ## Collective Key Generation ##
 
         client1.gen_key()
         client2.gen_key()
@@ -527,29 +527,29 @@ if __name__ == '__main__':
         ckg_shares.append(client2.gen_ckg_share())
 
         cpk = server.col_key_gen(ckg_shares)
-        print('Server generated collective public key:', len(cpk), len(cpk[0]), len(cpk[0][0]))
         
-        print('')
-
-        # Clients send encrypted updates to Server
+        ## Clients send encrypted updates to Server ##
 
         updates = []
         updates.append(client1.encrypt(cpk, client1.data))
         updates.append(client2.encrypt(cpk, client2.data))
 
-        # Aggregate updates
+        ## Aggregate updates ##
 
         agg = server.aggregate(updates)
 
-        # Collective Key Switching
+        ## Collective Key Switching ##
 
         cks_shares = []
         cks_shares.append(client1.gen_cks_share(agg))
         cks_shares.append(client2.gen_cks_share(agg))
 
-        server.col_key_switch(cks_shares)
+        server.col_key_switch(agg, cks_shares)
 
-        # TODO: Average updates pos aggregation
+        ## Average updates post aggregation ##
+        
+        server.average(len(cks_shares))
 
         # DEBUG: Verify model is updated as expected
         server.print_data()
+    

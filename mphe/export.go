@@ -185,9 +185,8 @@ func colKeySwitch(parms *C.Params, data *C.Data, cksShares *C.Share, cksSize C.s
 		}
 
 		// Perform keyswitching
-		serverCT := ckks.NewCiphertext(params, 1, params.MaxLevel(), params.Scale())
-		cksProtocol.KeySwitch(cksCombined, ct, serverCT)
-		ciphertexts[i] = serverCT
+		ciphertexts[i] = ckks.NewCiphertext(params, 1, params.MaxLevel(), params.Scale())
+		cksProtocol.KeySwitch(cksCombined, ct, ciphertexts[i])
 	}
 
 	// Populate server with key switched data (array of ciphertext)
@@ -212,9 +211,10 @@ func colKeyGen(sparams *C.Params, ssk *C.Poly, scrs *C.Poly, ckgShares *C.Share,
 
 	// Compute combined p0
 	shares := convSSRingPoly(ckgShares, ckgSize)	// ASSUME: ckgSize x 1
+	shares = append(shares, []*ring.Poly{serverShare})
 
-	for	i := 0 ; i < int(ckgSize) ; i++ {
-		ckgProtocol.AggregateShares(shares[i][0], ckgCombined, ckgCombined)
+	for	i := 0 ; i < len(shares) ; i++ {
+		ckgProtocol.AggregateShares(dckks.CKGShare(shares[i][0]), ckgCombined, ckgCombined)
 	}
 
 	// Generate public key
@@ -249,22 +249,21 @@ func aggregate(parms *C.Params, datas *C.Data, datasSize C.size_t) *C.Data {
 	return convData(aggregate)
 }
 
-//export average
-func average(server *C.MPHEServer, n C.int) {
-	N := float64(n)
+//export mulByConst
+func mulByConst(parms *C.Params, data *C.Data, cte C.double) *C.Data {
+	Cte := float64(cte)
 
 	// Instantiate evaluator
-	params := convCKKSParams(&server.params)
+	params := convCKKSParams(parms)
 	evaluator := ckks.NewEvaluator(params)
 	
-	// Normalize each ciphertext making up its data
-	ct := convSckksCiphertext(&server.data)
+	// Multiply each ciphertext making up its data
+	ct := convSckksCiphertext(data)
 	for i := 0 ; i < len(ct) ; i++ {
-		evaluator.MultByConst(ct[i], 1.0 / N, ct[i])
+		evaluator.MultByConst(ct[i], Cte, ct[i])
 	}
-
-	// Update server's data
-	server.data = *convData(ct)
+	
+	return convData(ct)
 }
 
 /// MPHE Client
