@@ -476,6 +476,12 @@ class _Conversion:
 printCiphertext2 = so.printCiphertext2
 printCiphertext2.argtypes = [ POINTER(_Params), POINTER(_Poly), POINTER(_Data) ]
 
+import pickle
+
+def simulate_network_comm(data):
+    pdata = pickle.dumps(data)
+    return pickle.loads(pdata)
+
 
 if __name__ == '__main__':
     ## Initialization ##
@@ -483,12 +489,19 @@ if __name__ == '__main__':
     server = MPHEServer()
     server.encrypt([ 0.0, 0.0 ])
 
+    params = server.params
+    secret_key = server.secret_key
+
+    # Network Communication (0)
+    params = simulate_network_comm(params)
+    secret_key = simulate_network_comm(secret_key)
+
     client1 = MPHEClient()
-    client1.define_scheme(server.params, server.secret_key)
+    client1.define_scheme(params, server.secret_key)
     client1.update = np.array([ 0.0, 1.0 ])
 
     client2 = MPHEClient()
-    client2.define_scheme(server.params, server.secret_key)
+    client2.define_scheme(params, server.secret_key)
     client2.update = np.array([ -1.0, 0.0 ])
 
     # DEBUG: Initial model
@@ -505,6 +518,10 @@ if __name__ == '__main__':
 
         encrypted_model = server.data
         crs = server.gen_crs()
+
+        # Network Communication (1)
+        encrypted_model = simulate_network_comm(encrypted_model)
+        crs = simulate_network_comm(crs)
 
         ## Clients decrypt + train ##
 
@@ -526,23 +543,38 @@ if __name__ == '__main__':
         ckg_shares.append(client1.gen_ckg_share())
         ckg_shares.append(client2.gen_ckg_share())
 
+        # Network Communication (2)
+        ckg_shares = simulate_network_comm(ckg_shares)
+
         cpk = server.col_key_gen(ckg_shares)
-        
+
+        # Network Communication (3)
+        cpk = simulate_network_comm(cpk)
+
         ## Clients send encrypted updates to Server ##
 
         updates = []
         updates.append(client1.encrypt(cpk, client1.data))
         updates.append(client2.encrypt(cpk, client2.data))
 
+        # Network Communication (4)
+        updates = simulate_network_comm(updates)
+
         ## Aggregate updates ##
 
         agg = server.aggregate(updates)
+
+        # Network Communication (5)
+        agg = simulate_network_comm(agg)
 
         ## Collective Key Switching ##
 
         cks_shares = []
         cks_shares.append(client1.gen_cks_share(agg))
         cks_shares.append(client2.gen_cks_share(agg))
+
+        # Network Communication (6)
+        cks_shares = simulate_network_comm(cks_shares)
 
         server.col_key_switch(agg, cks_shares)
 
