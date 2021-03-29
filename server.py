@@ -5,7 +5,7 @@ import utils
 from utils import DEBUG_LEVEL, TERM, Communication_Handler
 
 import server_trainer
-
+import compressor
 debug_level = DEBUG_LEVEL.INFO
 
 class Server():

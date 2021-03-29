@@ -4,7 +4,7 @@ import utils
 from utils import DEBUG_LEVEL, TERM, Communication_Handler
 
 import client_trainer
-
+import compressor
 debug_level = DEBUG_LEVEL.INFO
 
 class Client():
