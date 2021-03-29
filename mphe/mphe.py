@@ -85,18 +85,19 @@ _newMPHEServer = so.newMPHEServer
 _newMPHEServer.restype = POINTER(_MPHEServer)
 
 _genCRS = so.genCRS
-_genCRS.argtypes = [ POINTER(_MPHEServer) ]
+_genCRS.argtypes = [ POINTER(_Params) ]
 _genCRS.restype = POINTER(_Poly)
 
 _colKeySwitch = so.colKeySwitch
-_colKeySwitch.argtypes = [ POINTER(_MPHEServer), POINTER(_Share), c_size_t ]
+_colKeySwitch.argtypes = [ POINTER(_Params), POINTER(_Data), POINTER(_Share), c_size_t ]
+_colKeySwitch.restype = POINTER(_Data)
 
 _colKeyGen = so.colKeyGen
-_colKeyGen.argtypes = [ POINTER(_MPHEServer), POINTER(_Share), c_size_t ]
+_colKeyGen.argtypes = [ POINTER(_Params), POINTER(_Poly), POINTER(_Poly), POINTER(_Share), c_size_t ]
 _colKeyGen.restype = POINTER(_PolyPair)
 
 _aggregate = so.aggregate
-_aggregate.argtypes = [ POINTER(_MPHEServer), POINTER(_Data), c_size_t ]
+_aggregate.argtypes = [ POINTER(_Params), POINTER(_Data), c_size_t ]
 _aggregate.restype = POINTER(_Data)
 
 _average = so.average
@@ -110,12 +111,16 @@ class _MPHEClient(Structure):
         ('decryptionKey', _Poly)
     ]
 
-newMPHEClient = so.newMPHEClient
-newMPHEClient.restype = POINTER(_MPHEClient)
+_newMPHEClient = so.newMPHEClient
+_newMPHEClient.restype = POINTER(_MPHEClient)
 
-_encrypt = so.encrypt
-_encrypt.argtypes = [ POINTER(_Params), POINTER(_PolyPair), POINTER(c_double), c_size_t ]
-_encrypt.restype = POINTER(_Data)
+_encryptFromPk = so.encryptFromPk
+_encryptFromPk.argtypes = [ POINTER(_Params), POINTER(_PolyPair), POINTER(c_double), c_size_t ]
+_encryptFromPk.restype = POINTER(_Data)
+
+_encryptFromSk = so.encryptFromSk
+_encryptFromSk.argtypes = [ POINTER(_Params), POINTER(_Poly), POINTER(c_double), c_size_t ]
+_encryptFromSk.restype = POINTER(_Data)
 
 _decrypt = so.decrypt
 _decrypt.argtypes = [ POINTER(_Params), POINTER(_Poly), POINTER(_Data) ]
@@ -190,6 +195,139 @@ class MPHEServer:
         self.crs = _Conversion.from_poly(_server.crs)
         self.secret_key = _Conversion.from_poly(_server.secretKey)
         self.data = []
+    
+    def encrypt(self, data):
+        params = self.params.make_structure()
+        sk = _Conversion.to_poly(self.secret_key)
+
+        data_ptr = (c_double * len(data))(*data)
+        enc_data = _encryptFromSk(byref(params), byref(sk), data_ptr, len(data))
+
+        self.data = _Conversion.from_data(enc_data.contents)
+    
+    def gen_crs(self):
+        params = self.params.make_structure()
+
+        crs = _genCRS(byref(params))
+        self.crs = _Conversion.from_poly(crs.contents)
+
+        return self.crs
+    
+    def col_key_gen(self, ckg_shares):
+        params = self.params.make_structure()
+        sk = _Conversion.to_poly(self.secret_key)
+        crs = _Conversion.to_poly(self.crs)
+
+        shares = [ None ] * len(ckg_shares)
+
+        for i in range(len(ckg_shares)):
+            shares[i] = _Conversion.to_share(ckg_shares[i])
+        
+        shares_ptr = (_Share * len(shares))(*shares)
+
+        cpk = _colKeyGen(byref(params), byref(sk), byref(crs), shares_ptr, len(shares))
+
+        return _Conversion.from_polypair(cpk.contents)
+
+    def col_key_switch(self, cks_shares):
+        params = self.params.make_structure()
+        data = _Conversion.to_data(self.data)
+
+        shares = [ None ] * len(cks_shares)
+
+        for i in range(len(cks_shares)):
+            shares[i] = _Conversion.to_share(cks_shares[i])
+        
+        shares_ptr = (_Share * len(cks_shares))(*shares)
+
+        switched_data = _colKeySwitch(byref(params), byref(data), shares_ptr, len(shares))
+        self.data = _Conversion.from_data(switched_data.contents)
+
+    def aggregate(self, updates):
+        params = self.params.make_structure()
+
+        data = [ None ] * len(updates)
+
+        for i in range(len(updates)):
+            data[i] = _Conversion.to_data(updates[i])
+        
+        data_ptr = (_Data * len(data))(*data)
+
+        agg = _aggregate(byref(params), data_ptr, len(data))
+
+        return _Conversion.from_data(agg.contents)
+
+    # DEBUG
+    def print_data(self):
+        params = self.params.make_structure()
+        sk = _Conversion.to_poly(self.secret_key)
+        ct = _Conversion.to_data(self.data)
+
+        dec_data = _decrypt(byref(params), byref(sk), byref(ct))
+        dec_data = _Conversion.to_list(dec_data.contents)
+
+        print('Decrypted SERVER data:', dec_data)
+
+class MPHEClient:
+    def __init__(self):
+        _client_ptr = _newMPHEClient()
+        _client = _client_ptr.contents
+        
+        self.params = Params(_client.params)
+        self.crs = []
+        self.secret_key = []
+        self.decryption_key = []
+
+        # EXTRA: for demonstration only
+        self.data = np.array([ 0.0, 0.0 ])
+        self.update = np.array([ 0.0, 0.0])
+    
+    def define_scheme(self, params, dk):
+        self.params = params
+        self.decryption_key = dk
+
+    def gen_key(self):
+        params = self.params.make_structure()
+
+        sk = _genSecretKey(byref(params))
+        self.secret_key = _Conversion.from_poly(sk.contents)
+
+    def encrypt(self, public_key, data):
+        params = self.params.make_structure()
+        pk = _Conversion.to_polypair(public_key)
+
+        data_ptr = (c_double * len(data))(*data)
+        enc_data = _encryptFromPk(byref(params), byref(pk), data_ptr, len(data))
+
+        return _Conversion.from_data(enc_data.contents)
+
+    def decrypt(self, data):
+        params = self.params.make_structure()
+        sk = _Conversion.to_poly(self.decryption_key)
+        ct = _Conversion.to_data(data)
+
+        dec_data = _decrypt(byref(params), byref(sk), byref(ct))
+        dec_data = _Conversion.to_list(dec_data.contents)
+
+        return dec_data
+    
+    def gen_ckg_share(self):
+        params = self.params.make_structure()
+        sk = _Conversion.to_poly(self.secret_key)
+        crs = _Conversion.to_poly(self.crs)
+
+        ckg_share = _genCKGShare(byref(params), byref(sk), byref(crs))
+
+        return _Conversion.from_share(ckg_share.contents)
+    
+    def gen_cks_share(self, agg):
+        params = self.params.make_structure()
+        sk = _Conversion.to_poly(self.secret_key)
+        data = _Conversion.to_data(agg)
+
+        cks_share = _genCKSShare(byref(params), byref(sk), byref(data))
+
+        return _Conversion.from_share(cks_share.contents)
 
 class _Conversion:
     # (FYI) Convert to numpy array: https://stackoverflow.com/questions/4355524/getting-data-from-ctypes-array-into-numpy
@@ -282,6 +420,28 @@ class _Conversion:
 
         return _pp
 
+    ### _Share
+
+    def from_share(_share):
+        share = [ None ] * _share.size
+
+        for i in range(_share.size):
+            share[i] = _Conversion.from_poly(_share.data[i])
+        
+        return share
+
+    def to_share(share):
+        list_poly = [ None ] * len(share)
+
+        for i in range(len(share)):
+            list_poly[i] = _Conversion.to_poly(share[i])
+        
+        _share = _Share()
+        _share.size = len(list_poly)
+        _share.data = (_Poly * _share.size)(*list_poly)
+
+        return _share
+
     ### _Data
 
     def from_data(_data):
@@ -310,28 +470,86 @@ printCiphertext2.argtypes = [ POINTER(_Params), POINTER(_Poly), POINTER(_Data) ]
 
 
 if __name__ == '__main__':
-    # Instantiate server
+    # Initialization
+
     server = MPHEServer()
+    server.encrypt([ 0.0, 0.0 ])
 
-    data = [ 0.0, 1.5, 10000, 4.232425, -3.111111111111 ]
-    print('Original data:', data)
-    data_in = (c_double * len(data))(*data)
+    client1 = MPHEClient()
+    client1.define_scheme(server.params, server.secret_key)
+    client1.update = np.array([ 0.0, 0.0 ])
 
-    params = server.params.make_structure()
-    sk = _Conversion.to_poly(server.secret_key)
+    client2 = MPHEClient()
+    client2.define_scheme(server.params, server.secret_key)
+    client2.update = np.array([ 0.0, 0.0 ])
 
-    # Generate PK and cache on Python
-    pk = genPublicKey(byref(params), byref(sk))
-    pk = _Conversion.from_polypair(pk.contents)
-    pk = _Conversion.to_polypair(pk)
+    # DEBUG: Initial model
+    server.print_data()
 
-    # Encrypt to CT and cache on Python
-    ct = _encrypt(params, byref(pk), data_in, len(data))
-    ct = _Conversion.from_data(ct.contents)
-    ct = _Conversion.to_data(ct)
-    
-    printCiphertext2(byref(params), byref(sk), ct)
+    # Simulate MPHE Iterations
 
-    data_out = _decrypt(byref(params), byref(sk), ct)
-    rec_data = _Conversion.to_list(data_out.contents)
-    print('Enc --> Dec:', rec_data)
+    max_iters = 1
+
+    for i in range(max_iters):
+        print('\nITERATION {}\n'.format(i))
+
+        # Server sends ecnrypted model to Clients
+
+        encrypted_model = server.data
+        crs = server.gen_crs()
+
+        # Clients decrypt + train
+
+        client1.crs = crs
+        client2.crs = crs
+
+        client1.data = client1.decrypt(encrypted_model)
+        print('CLIENT 1 received:', client1.data)
+        client2.data = client2.decrypt(encrypted_model)
+        print('CLIENT 2 received:', client2.data)
+
+        print('')
+
+        client1.data = (np.array(client1.data) + client1.update).tolist()
+        print('CLIENT 1 updated to:', client1.data)
+        client2.data = (np.array(client2.data) + client2.update).tolist()
+        print('CLIENT 2 updated to:', client2.data)
+
+        print('')
+
+        # Collective Key Generation
+
+        client1.gen_key()
+        client2.gen_key()
+
+        ckg_shares = []
+        ckg_shares.append(client1.gen_ckg_share())
+        ckg_shares.append(client2.gen_ckg_share())
+
+        cpk = server.col_key_gen(ckg_shares)
+        print('Server generated collective public key:', len(cpk), len(cpk[0]), len(cpk[0][0]))
+        
+        print('')
+
+        # Clients send encrypted updates to Server
+
+        updates = []
+        updates.append(client1.encrypt(cpk, client1.data))
+        updates.append(client2.encrypt(cpk, client2.data))
+
+        # Aggregate updates
+
+        agg = server.aggregate(updates)
+
+        # Collective Key Switching
+
+        cks_shares = []
+        cks_shares.append(client1.gen_cks_share(agg))
+        cks_shares.append(client2.gen_cks_share(agg))
+
+        server.col_key_switch(cks_shares)
+
+        # TODO: Average updates pos aggregation
+
+        # DEBUG: Verify model is updated as expected
+        server.print_data()

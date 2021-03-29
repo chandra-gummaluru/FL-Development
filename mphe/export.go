@@ -131,7 +131,7 @@ func newMPHEServer() *C.MPHEServer {
 	server.params = *convParams(PARAMS)
 
 	// Generate CRS
-	server.crs = *genCRS(server)
+	server.crs = *genCRS(&server.params)
 
 	// Generate SecretKey
 	keyGen := ckks.NewKeyGenerator(PARAMS)
@@ -142,8 +142,8 @@ func newMPHEServer() *C.MPHEServer {
 }
 
 //export genCRS
-func genCRS(server *C.MPHEServer) *C.Poly {
-	params := convCKKSParams(&server.params)
+func genCRS(parms *C.Params) *C.Poly {
+	params := convCKKSParams(parms)
 
 	lattigoPRNG, err := utils.NewKeyedPRNG([]byte{'l', 'a', 't', 't', 'i', 'g', 'o'})
 	if err != nil {
@@ -158,7 +158,7 @@ func genCRS(server *C.MPHEServer) *C.Poly {
 }
 
 //export colKeySwitch
-func colKeySwitch(server *C.MPHEServer, data *C.Data, cksShares *C.Share, cksSize C.size_t) {
+func colKeySwitch(parms *C.Params, data *C.Data, cksShares *C.Share, cksSize C.size_t) *C.Data {
 	// Convert to Go slices
 	cts := convSckksCiphertext(data)
 	shares := convSSRingPoly(cksShares, cksSize)
@@ -169,7 +169,7 @@ func colKeySwitch(server *C.MPHEServer, data *C.Data, cksShares *C.Share, cksSiz
 
 	for i, ct := range cts {
 		// Create CKSProtocol + Server share
-		params := convCKKSParams(&server.params)
+		params := convCKKSParams(parms)
 		cksProtocol := dckks.NewCKSProtocol(params, SMUDGE)
 		serverShare := cksProtocol.AllocateShare()
 
@@ -185,24 +185,24 @@ func colKeySwitch(server *C.MPHEServer, data *C.Data, cksShares *C.Share, cksSiz
 		}
 
 		// Perform keyswitching
-		serverCT := new(ckks.Ciphertext)
+		serverCT := ckks.NewCiphertext(params, 1, params.MaxLevel(), params.Scale())
 		cksProtocol.KeySwitch(cksCombined, ct, serverCT)
 		ciphertexts[i] = serverCT
 	}
 
 	// Populate server with key switched data (array of ciphertext)
-	server.data = *convData(ciphertexts)
+	return convData(ciphertexts)
 }
 
 //export colKeyGen
-func colKeyGen(server *C.MPHEServer, ckgShares *C.Share, ckgSize C.size_t) *C.PolyPair {
+func colKeyGen(sparams *C.Params, ssk *C.Poly, scrs *C.Poly, ckgShares *C.Share, ckgSize C.size_t) *C.PolyPair {
 	// Create CKG Protocol + Server share
-	params := convCKKSParams(&server.params)
+	params := convCKKSParams(sparams)
 	ckgProtocol := dckks.NewCKGProtocol(params)
 
 	secretKey := ckks.NewSecretKey(params)
-	secretKey.Set(convRingPoly(&server.secretKey))
-	crs := convRingPoly(&server.crs)
+	secretKey.Set(convRingPoly(ssk))
+	crs := convRingPoly(scrs)
 	
 	serverShare := ckgProtocol.AllocateShares()
 	ckgProtocol.GenShare(secretKey.Get(), crs, serverShare)
@@ -225,7 +225,7 @@ func colKeyGen(server *C.MPHEServer, ckgShares *C.Share, ckgSize C.size_t) *C.Po
 }
 
 //export aggregate
-func aggregate(server *C.MPHEServer, datas *C.Data, datasSize C.size_t) *C.Data {
+func aggregate(parms *C.Params, datas *C.Data, datasSize C.size_t) *C.Data {
 	// ERROR: no ciphertexts to aggregate
 	if int(datasSize) == 0 {
 		return nil
@@ -235,10 +235,9 @@ func aggregate(server *C.MPHEServer, datas *C.Data, datasSize C.size_t) *C.Data 
 	cts := convSSckksCiphertext(datas, datasSize)
 
 	// Compute aggregate
-	aggregate := make([]*ckks.Ciphertext, int(server.data.size))
-	aggregate = cts[0]
+	aggregate := cts[0]
 
-	params := convCKKSParams(&server.params)
+	params := convCKKSParams(parms)
 	evaluator := ckks.NewEvaluator(params)
 
 	for _, ct := range cts[1:] {
@@ -280,14 +279,37 @@ func newMPHEClient() *C.MPHEClient {
 	return client
 }
 
-//export encrypt
-func encrypt(parms *C.Params, pk *C.PolyPair, array *C.double, arraySize C.size_t) *C.Data {
+//export encryptFromPk
+func encryptFromPk(parms *C.Params, pk *C.PolyPair, array *C.double, arraySize C.size_t) *C.Data {
 	params := convCKKSParams(parms)
 	encoder := ckks.NewEncoder(params)
 
 	publicKey := ckks.NewPublicKey(params)
 	publicKey.Set(convS2RingPoly(pk))
 	encryptor := ckks.NewEncryptorFromPk(params, publicKey)
+
+	// Encrypt the array element-wise
+	size := int(arraySize)
+	list := (*[1<<30]C.double)(unsafe.Pointer(array))[:size:size]
+
+	cts := make([]*ckks.Ciphertext, size)
+	for i, elem := range list {
+		val := complex(float64(elem), 0.0)
+		pt := encoder.EncodeNew([]complex128{val}, params.LogSlots())
+		cts[i] = encryptor.EncryptNew(pt)
+	}
+
+	return convData(cts)
+}
+
+//export encryptFromSk
+func encryptFromSk(parms *C.Params, sk *C.Poly, array *C.double, arraySize C.size_t) *C.Data {
+	params := convCKKSParams(parms)
+	encoder := ckks.NewEncoder(params)
+
+	secretKey := ckks.NewSecretKey(params)
+	secretKey.Set(convRingPoly(sk))
+	encryptor := ckks.NewEncryptorFromSk(params, secretKey)
 
 	// Encrypt the array element-wise
 	size := int(arraySize)
@@ -359,12 +381,14 @@ func genCKSShare(parms *C.Params, sk *C.Poly, data *C.Data) *C.Share {
 	cksProtocol := dckks.NewCKSProtocol(params, SMUDGE)
 
 	zero := params.NewPolyQ()
-	skp := convRingPoly(sk)
+	secretKey := ckks.NewSecretKey(params)
+	secretKey.Set(convRingPoly(sk))
 	
 	cts := convSckksCiphertext(data)
 	cksShares := make([]*ring.Poly, len(cts))
 	for i, ct := range cts {
-		cksProtocol.GenShare(skp, zero, ct, cksShares[i])
+		cksShares[i] = cksProtocol.AllocateShare()
+		cksProtocol.GenShare(secretKey.Get(), zero, ct, cksShares[i])
 	}
 
 	return convShare(cksShares)
