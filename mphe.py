@@ -3,7 +3,7 @@ import numpy as np
 
 ### ctypes Structures + Exported Functions ###
 
-so = cdll.LoadLibrary('./mphe/_mphe.so')
+_so = cdll.LoadLibrary('./mphe/_mphe.so')
 
 class _Ldouble(Structure):
     _fields_ = [
@@ -69,26 +69,26 @@ class _MPHEServer(Structure):
         ('data', _Data),
     ]
 
-_newMPHEServer = so.newMPHEServer
+_newMPHEServer = _so.newMPHEServer
 _newMPHEServer.restype = POINTER(_MPHEServer)
 
-_genCRS = so.genCRS
+_genCRS = _so.genCRS
 _genCRS.argtypes = [ POINTER(_Params) ]
 _genCRS.restype = POINTER(_Poly)
 
-_colKeySwitch = so.colKeySwitch
+_colKeySwitch = _so.colKeySwitch
 _colKeySwitch.argtypes = [ POINTER(_Params), POINTER(_Data), POINTER(_Share), c_size_t ]
 _colKeySwitch.restype = POINTER(_Data)
 
-_colKeyGen = so.colKeyGen
+_colKeyGen = _so.colKeyGen
 _colKeyGen.argtypes = [ POINTER(_Params), POINTER(_Poly), POINTER(_Poly), POINTER(_Share), c_size_t ]
 _colKeyGen.restype = POINTER(_PolyPair)
 
-_aggregate = so.aggregate
+_aggregate = _so.aggregate
 _aggregate.argtypes = [ POINTER(_Params), POINTER(_Data), c_size_t ]
 _aggregate.restype = POINTER(_Data)
 
-_mulByConst = so.mulByConst
+_mulByConst = _so.mulByConst
 _mulByConst.argtypes = [ POINTER(_Params), POINTER(_Data), c_double ]
 _mulByConst.restype = POINTER(_Data)
 
@@ -100,30 +100,30 @@ class _MPHEClient(Structure):
         ('decryptionKey', _Poly)
     ]
 
-_newMPHEClient = so.newMPHEClient
+_newMPHEClient = _so.newMPHEClient
 _newMPHEClient.restype = POINTER(_MPHEClient)
 
-_encryptFromPk = so.encryptFromPk
+_encryptFromPk = _so.encryptFromPk
 _encryptFromPk.argtypes = [ POINTER(_Params), POINTER(_PolyPair), POINTER(c_double), c_size_t ]
 _encryptFromPk.restype = POINTER(_Data)
 
-_encryptFromSk = so.encryptFromSk
+_encryptFromSk = _so.encryptFromSk
 _encryptFromSk.argtypes = [ POINTER(_Params), POINTER(_Poly), POINTER(c_double), c_size_t ]
 _encryptFromSk.restype = POINTER(_Data)
 
-_decrypt = so.decrypt
+_decrypt = _so.decrypt
 _decrypt.argtypes = [ POINTER(_Params), POINTER(_Poly), POINTER(_Data) ]
 _decrypt.restype = POINTER(_Ldouble)
 
-_genSecretKey = so.genSecretKey
+_genSecretKey = _so.genSecretKey
 _genSecretKey.argtypes = [ POINTER(_Params) ]
 _genSecretKey.restype = POINTER(_Poly)
 
-_genCKGShare = so.genCKGShare
+_genCKGShare = _so.genCKGShare
 _genCKGShare.argtypes = [ POINTER(_Params), POINTER(_Poly), POINTER(_Poly) ]
 _genCKGShare.restype = POINTER(_Share)
 
-_genCKSShare = so.genCKSShare
+_genCKSShare = _so.genCKSShare
 _genCKSShare.argtypes = [ POINTER(_Params), POINTER(_Poly), POINTER(_Data) ]
 _genCKSShare.restype = POINTER(_Share)
 
