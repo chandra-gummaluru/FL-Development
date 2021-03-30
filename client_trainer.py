@@ -25,7 +25,7 @@ class ClientTrainer():
         self.lr = 1e-3
         self.momentum = 0.9
         self.batch_size = 164    #4
-        self.mu = 0
+        self.mu = 1
         self.use_proximal = use_proximal_term
 
         # EXTRA: Cache digits part of this client's dataset
