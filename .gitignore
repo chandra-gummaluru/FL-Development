@@ -9,3 +9,6 @@ venv
 # Data
 data/
 train_curves/
+
+# Mac OSX
+.DS_Store

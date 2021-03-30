@@ -125,7 +125,7 @@ class ClientTrainer():
                 TERM.write('\tTraining Accuracy: {0:0.2f}'.format(train_acc))
                 TERM.write('\tTesting Accuracy: {0:0.2f}'.format(test_acc))
 
-            with open('test.csv', 'a', newline='') as csv_file:
+            with open('./train_curves/Client{}.csv'.format(self.digits), 'a', newline='') as csv_file:
                 writer = csv.writer(csv_file)
                 writer.writerow(train_acc_list)
         end = time.time()
