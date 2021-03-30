@@ -19,12 +19,14 @@ from utils import DEBUG_LEVEL, TERM
 debug_level = DEBUG_LEVEL.INFO
 
 class ClientTrainer():
-    def __init__(self, local_client_digits, use_cuda=True):
+    def __init__(self, local_client_digits, use_cuda=True, use_proximal_term=True):
         # Hyperparameters
         self.num_epochs = 2
         self.lr = 1e-3
         self.momentum = 0.9
         self.batch_size = 164    #4
+        self.mu = 0
+        self.use_proximal = use_proximal_term
 
         # EXTRA: Cache digits part of this client's dataset
         self.digits = local_client_digits
@@ -45,8 +47,9 @@ class ClientTrainer():
         self.train_loader = DataLoader(train_set, batch_size=self.batch_size, shuffle=True)
         self.test_loader = DataLoader(test_set, batch_size=len(test_set.targets), shuffle=False)
 
-        # Instantiate model
+        # Instantiate local model & global model
         self.model = model1.Net()
+        self.global_model = model1.Net()
 
         # Enable CUDA
         self.use_cuda = use_cuda
@@ -58,6 +61,7 @@ class ClientTrainer():
     # Load weights from server model
     def load_weights(self, weights):
         self.model.load_state_dict(weights)
+        self.global_model.load_state_dict(weights)
 
     # Compute focused update to send
     def focused_update(self):
@@ -67,6 +71,22 @@ class ClientTrainer():
         # Optimization Settings
         criterion = nn.CrossEntropyLoss()
         optimizer = torch.optim.SGD(self.model.parameters(), lr=self.lr, momentum=self.momentum)
+        
+        # squared difference of all layers
+        def proximal_term(net, global_net, mu):
+            diff = 0
+            for paramA, paramB in zip(net.parameters(), global_net.parameters()):
+                diff += torch.dist(paramA,paramB)**2
+            return diff * mu / 2.0
+
+        # squared difference of FC layer only
+        def proximal_term2(net, global_net, mu):
+            diff = 0
+            for m1,m2 in zip(net.modules(), global_net.modules()):
+                if isinstance(m1,nn.Linear):
+                    diff += torch.dist(m1.weight,m2.weight)**2
+            return diff * mu / 2.0
+
 
         start = time.time()
 
@@ -82,6 +102,10 @@ class ClientTrainer():
                 # Forward Pass
                 outputs = self.model(inputs)
                 loss = criterion(outputs, targets)
+                
+                # Apply proximal term to assist with global convergence
+                if (self.use_proximal):
+                    loss += proximal_term2(self.model, self.global_model, self.mu)
 
                 # Backward Pass
                 loss.backward()
