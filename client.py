@@ -55,7 +55,7 @@ class FLClient(Client):
 
         # Training Program (specific to the model being trained)
         self.trainer = trainer
-        self.TIMEOUT = 120
+        self.TIMEOUT = 100000000000
         self.compressor = compressor
 
     ### FL Training Loop ###
