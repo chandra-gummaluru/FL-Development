@@ -15,6 +15,7 @@ class Server():
 
         # the socket to listen for connections on.
         self.listener_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.listener_sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         self.listener_sock.bind(host)
 
         self.listener_process = None

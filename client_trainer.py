@@ -103,7 +103,7 @@ class ClientTrainer():
 
             with open('./train_curves/Client{}.csv'.format(self.digits), 'a', newline='') as csv_file:
                 writer = csv.writer(csv_file)
-                writer.writerow(train_acc_list)
+                writer.writerow(test_acc_list)
         end = time.time()
 
         if debug_level >= DEBUG_LEVEL.INFO:

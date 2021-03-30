@@ -12,6 +12,7 @@ class Client():
         # Socket for communication
         self.server = server
         self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         self.connected = False
 
         self.name = 'anon_client' if not name else name
