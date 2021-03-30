@@ -87,7 +87,7 @@ class FLServer(Server):
         self.subset_size = 3 # Default
 
         # Timeout.
-        self.TIMEOUT = 30
+        self.TIMEOUT = 100000000000
 
     # Executes FL Training Loop
     def train(self):
@@ -104,7 +104,7 @@ class FLServer(Server):
             self.broadcast_model()
 
             if debug_level >= DEBUG_LEVEL.INFO:
-                TERM.write_info("Waiting for updates...(Timeout: 30s)")
+                TERM.write_info("Waiting for updates...(Timeout: " + str(self.TIMEOUT) + ")")
 
             start = time.time()
 
