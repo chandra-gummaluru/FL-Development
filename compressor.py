@@ -19,7 +19,7 @@ class Compressor:
  
   # compression function takes in dropout rate and random seed.
     # input original model, output compressed model
-    def compress(self, decompressed_model, dropout_rate=0.2, random_seed=10):
+    def compress(self, decompressed_model, dropout_rate=0.5, random_seed=123):
         compressed_weights = {}
         zero_indices = {}
         # print(model)
@@ -68,8 +68,8 @@ class Compressor:
         return reconstructed_model
 
 
-    def random_index(self, max_range, dropout_rate=0.2, random_seed=10):
+    def random_index(self, max_range, dropout_rate=0.5, random_seed=123):
         np.random.seed(random_seed)
         random_list = np.random.choice(range(max_range), int(max_range * dropout_rate) , replace=False)
         random_list.sort()
-        return random_list
+        return random_list 

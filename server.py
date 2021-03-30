@@ -186,7 +186,7 @@ class FLServer(Server):
         # check if all clients have provided data.
         if len(self.selected_clients_updates) == len(self.selected_clients_by_addr):
             # Aggregate the updates.
-            self.aggregated_update = self.trainer.aggregate(self.selected_clients_updates.values())
+            self.aggregated_update = self.trainer.aggregate(self.selected_clients_updates)
 
     # Update server model (centralized model)
     def update_model(self, aggregated_update):
@@ -194,7 +194,7 @@ class FLServer(Server):
 
 ### Main Code ###
 
-BUFFER_TIME = 5
+BUFFER_TIME = 10
 
 if __name__ == '__main__':
     # the socket for the server.

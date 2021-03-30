@@ -44,9 +44,7 @@ class ServerTrainer():
 
         for key in aggregate_update:
             # Accumulate the updates
-            for update in updates:
-                # print(aggregate_update[key])
-                # print(update[1])
+            for update in updates.values():
                 aggregate_update[key] += update[key]
 
             # Average
