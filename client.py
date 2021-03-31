@@ -47,7 +47,7 @@ class Client():
         else:
             if debug_level >= DEBUG_LEVEL.INFO:
                 TERM.write_success('Successfully connected to {} as {}'.format(SERVER, self.sock.getsockname()))
-            self.run()
+            self.loop()
 
 
 # Handles FL Client training loop logic
@@ -77,12 +77,12 @@ class FLClient(Client):
 
     def setup(self):
         if debug_level >= DEBUG_LEVEL.INFO:
-            TERM.write_info('Idle...')
-        
+            TERM.write_info('Waiting for selection...')
+
         # establish individual security parameters with the server.
         security_params = wait_for_response()
         if debug_level >= DEBUG_LEVEL.INFO:
-            TERM.write_info('Establishing security parameters with server....')
+            TERM.write_info('Sending CKG share to server...')
 
         params, secret_key, crs = security_params
         self.encrypter.define_scheme(params, secret_key)
@@ -92,8 +92,9 @@ class FLClient(Client):
         cpk = wait_for_response()
 
         if debug_level >= DEBUG_LEVEL.INFO:
-            TERM.write_success('Successfully established security parameters with server.')
+            TERM.write_success('Recieved aggregate CKG result.')
         #TODO: Add failure case.
+        return STATUS.SUCCESS
 
     def train(self):
         if debug_level >= DEBUG_LEVEL.INFO:
@@ -110,65 +111,40 @@ class FLClient(Client):
         if debug_level >= DEBUG_LEVEL.INFO:
             TERM.write_success("Successfully trained model.")
 
+        return STATUS.SUCCESS
+
     def update(self):
         if debug_level >= DEBUG_LEVEL.INFO:
             TERM.write_info("Sending update to server...")
+        encrypted_update = self.encrypter.encrypt(cpk, self.trainer.flat_update())
+        # Send update to the server
+        Communication_Handler.send_msg(self.sock, encrypted_update)
 
-        self.encrypter.encrypt(cpk, )
-
-    def run(self):
         if debug_level >= DEBUG_LEVEL.INFO:
-            TERM.write_info('Setting up secure communication channel with server...')
-            
-        security_params = wait_for_response()
-        if security_params == None:
-            if debug_level >= DEBUG_LEVEL.INFO:
-                TERM.write_failure('Failed to setup secure communication channel with server.')
-            return
-        
-        params, secret_key, crs = security_params
-        Communication_Handler.send_msg(self.sock, self.encrypter.define_scheme(params, secret_key))
+            TERM.write_success("Update sent.")
 
-        cpk = wait_for_response()
-        if cpk == None:
-            if debug_level >= DEBUG_LEVEL.INFO:
-                TERM.write_failure('Failed to setup secure communication channel with server.')
-            return
+        if debug_level >= DEBUG_LEVEL.INFO:
+            TERM.write_info("Waiting for aggregate update...")
+        aggregate_update = wait_for_response()
 
+        if debug_level >= DEBUG_LEVEL.INFO:
+            TERM.write_success("Successfully recieved aggregate update.")
+            TERM.write_info('Sending CKS share...')
+
+        cks_share = self.encrypter.decrypt(self.encrypter.gen_cks_share(aggregate_update))
+        # Send update to the server
+        Communication_Handler.send_msg(self.sock, cks_share)
+
+        if debug_level >= DEBUG_LEVEL.INFO:
+            TERM.write_success("Successfully sent CKS share.")
+
+        return STATUS.SUCCESS
+
+    def loop(self):
         while True:
-            # Wait for weights from the server
-            if debug_level > DEBUG_LEVEL.IFNO:
-                TERM.write_info('Waiting for model from server...(Timeout: ' + str(self.TIMEOUT) + ')')
-
-                weights = wait_for_response()
-                if weights == None:
-                    if debug_level >= DEBUG_LEVEL.INFO:
-                        TERM.write_warning("Time Limit Exceeded: Failed to recieve weights from the server.")
-                else:
-                    if debug_level >= DEBUG_LEVEL.INFO:
-                        TERM.write_success("Successfully recieved weights from server.")
-                        TERM.write_info("Training local model...")
-
-                    # Load weights
-                    self.encrypter.crs = crs
-                    weights = self.encrypter.decrypt(weights)
-                    self.trainer.load_weights(weights)
-
-                    # Train model
-                    self.trainer.train()
-
-                    if debug_level >= DEBUG_LEVEL.INFO:
-                        TERM.write_success("Training complete.")
-                        TERM.write_info("Sending update to server...")
-
-                    # Compute focused update
-                    update = self.trainer.focused_update()
-
-                    # Send update to the server
-                    Communication_Handler.send_msg(self.sock, update)
-
-                    if debug_level >= DEBUG_LEVEL.INFO:
-                        TERM.write_success("Update sent.")
+            if (STATUS.failed(self.setup()): continue
+            if (STATUS.failed(self.train()): continue
+            if (STATUS.failed(self.update()): continue
 
 ### Main Code ###
 

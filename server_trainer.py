@@ -79,6 +79,20 @@ class ServerTrainer():
 
         return state
 
+    # load the model from a flat update.
+    def update_model(self, flat_update):
+        state_dict = {}
+        last = 0
+        for layer, (shape, size) in self.model_arch():
+        self.model.state_dict[layer] = flat_update[last : last + size].reshape(shape)
+
+    # compute the model architecture.
+    def model_arch(self):
+        arch = {}
+        for layer, weights in self.model.state_dict():
+            arch[layer] = (weights.shape, weights.size)
+        return arch
+
     # Load test dataset
     def load_test_data(self):
         composition = transforms.Compose([transforms.ToTensor(), transforms.Normalize((0.5,), (0.5,))])

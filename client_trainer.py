@@ -59,9 +59,20 @@ class ClientTrainer():
     def load_weights(self, weights):
         self.model.load_state_dict(weights)
 
-    # Compute focused update to send
-    def focused_update(self):
-        return self.model.state_dict()
+    # compute the model architecture.
+    def model_arch(self):
+        sizes = {}
+        for layer, weights in self.model.state_dict():
+            sizes[layer] = weights.shape
+        return sizes
+
+    # Compute a flat update to send
+    def flat_update(self):
+        params = []
+        for layer, weights in self.model.state_dict():
+            params.append(weights)
+        params = np.array(params).flatten()
+        return params
 
     def train(self):
         # Optimization Settings

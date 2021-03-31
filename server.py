@@ -86,10 +86,10 @@ class FLServer(Server):
         # FL Model trainer
         self.trainer = trainer
         self.subset_size = 3 # Default
-        
+
         # Encryption module.
         self.encrpyter = MPHEServer()
-        
+
         # Timeout.
         self.TIMEOUT = 100000000000
 
@@ -101,35 +101,29 @@ class FLServer(Server):
         self.select_clients(self.subset_size)
         if debug_level >= DEBUG_LEVEL.INFO:
             TERM.write_success('Successfuly selected clients.')
-            TERM.write_info("Establishing individual security parameters...")
+            TERM.write_info("Requesting CKG shares...")
         # establish the individual security parameters with each client.
         security_params = (self.encrypter.params, self.encrypter.secret_key, self.encrpyter.gen_crs())
         self.broadcast(self.selected_clients_by_addr.keys, security_params)
-        
+
         # attempt to get responses from the clients.
         if STATUS.failure(self.get_responses()):
             if debug_level >= DEBUG_LEVEL.INFO:
-                TERM.write_warning('Time Limit Exceeded: Failed to establish individual security parameters.')
+                TERM.write_warning('Time Limit Exceeded: Failed to receive CKG shares from all clients.')
             return STATUS.FAILURE
 
         if debug_level >= DEBUG_LEVEL.INFO:
-            TERM.write_success('Successfuly estaablished individual security parameters.')
-            TERM.write_info("Establishing collective security parameters...")
+            TERM.write_success('Successfuly received CKG shares from all clients.')
+            TERM.write_info("Performing CKG...")
 
         # establish the collective security parameters.
         cpk = server.col_key_gen(list(self.selected_client_responses.values()))
         self.selected_client_responses = {}
         self.broadcast(self.selected_clients_by_addr.keys, cpk)
-        
-        # attempt to get acknowledgements from the clients.
-        if STATUS.failure(self.get_responses()):
-            if debug_level >= DEBUG_LEVEL.INFO:
-                TERM.write_warning('Time Limit Exceeded: Failed to establish collective security parameters.')
-            return STATUS.FAILURE
 
         if debug_level >= DEBUG_LEVEL.INFO:
-            TERM.write_success('Successfuly estaablished collective security parameters.')
-        
+            TERM.write_success('Successfully performed CKG.')
+
         return STATUS.SUCCESS
 
     def train(self):
@@ -138,7 +132,7 @@ class FLServer(Server):
         # send model to all clients.
         self.selected_client_responses = {}
         self.broadcast(self.selected_clients_by_addr.keys(), self.trainer.model.state_dict())
-        
+
         # attempt to get updates from the clients.
         if STATUS.failure(self.get_responses()):
             if debug_level >= DEBUG_LEVEL.INFO:
@@ -156,27 +150,27 @@ class FLServer(Server):
 
         if debug_level >= DEBUG_LEVEL.INFO:
             TERM.write_success("Successfully aggregated updates.")
-            TERM.write_info("Requesting collective security switches...")
+            TERM.write_info("Requesting CKS shares...")
 
         self.selected_client_responses = {}
         self.broadcast(self.selected_clients_by_addr.keys, agg)
 
-        # attempt to get acknowledgement from the clients.
+        # attempt to get CKS shares from the clients.
         if STATUS.failure(self.get_responses()):
             if debug_level >= DEBUG_LEVEL.INFO:
-                TERM.write_warning('Time Limit Exceeded: Failed to receive acknowledgement from all clients.')
+                TERM.write_warning('Time Limit Exceeded: Failed to receive CKS shares from all clients.')
             return STATUS.FAILURE
 
         if debug_level >= DEBUG_LEVEL.INFO:
-            TERM.write_success("Successfully recieved acknowledgement from all clients.")
-        
-        # perform collective key switching.
+            TERM.write_success("Successfully recieved CKS shares from all clients.")
+
+        # perform CKS.
         cks_shares = list(self.selected_client_responses.values())
         self.encrpyter.col_key_switch(agg, cks_shares)
         # average the aggregate update.
         self.encrpyter.average(len(cks_shares))
         # load the new model.
-        # TODO: HERE.
+        self.trainer.update_model(self.encrypter.data)
         return STATUS.SUCCESS
 
     # Executes FL Training Loop
@@ -199,7 +193,7 @@ class FLServer(Server):
                 sock = self.connected_clients_by_addr[addr]
                 self.selected_clients_by_addr[addr] = sock
                 self.selected_clients_by_sock[sock] = addr
-    
+
     # Retrieve responses of selected clients
     def get_responses(self, timeout = 1000000):
         self.selected_client_responses = {}
