@@ -2,8 +2,9 @@ import time, sys, threading, errno, socket, queue, pickle, random, select
 from random import sample
 
 import utils
-from utils import DEBUG_LEVEL, TERM, Communication_Handler
+from utils import DEBUG_LEVEL, TERM, STATUS, Communication_Handler
 
+import mphe
 import server_trainer
 
 debug_level = DEBUG_LEVEL.INFO
@@ -76,7 +77,7 @@ class FLServer(Server):
         self.selected_clients_by_addr = {}
         self.selected_clients_by_sock = {}
 
-        self.selected_clients_updates = {}
+        self.selected_client_responses = {}
 
         # Flags / Cache for FL loop
         self.aggregated_update = None # whether the current updates have been aggreated.
@@ -85,64 +86,108 @@ class FLServer(Server):
         # FL Model trainer
         self.trainer = trainer
         self.subset_size = 3 # Default
-
+        
+        # Encryption module.
+        self.encrpyter = MPHEServer()
+        
         # Timeout.
         self.TIMEOUT = 100000000000
 
-    # Executes FL Training Loop
+    def setup(self):
+        # select a subset of the clients.
+        if debug_level >= DEBUG_LEVEL.INFO:
+            TERM.write_info("Selecting clients...")
+
+        self.select_clients(self.subset_size)
+        if debug_level >= DEBUG_LEVEL.INFO:
+            TERM.write_success('Successfuly selected clients.')
+            TERM.write_info("Establishing individual security parameters...")
+        # establish the individual security parameters with each client.
+        security_params = (self.encrypter.params, self.encrypter.secret_key, self.encrpyter.gen_crs())
+        self.broadcast(self.selected_clients_by_addr.keys, security_params)
+        
+        # attempt to get responses from the clients.
+        if STATUS.failure(self.get_responses()):
+            if debug_level >= DEBUG_LEVEL.INFO:
+                TERM.write_warning('Time Limit Exceeded: Failed to establish individual security parameters.')
+            return STATUS.FAILURE
+
+        if debug_level >= DEBUG_LEVEL.INFO:
+            TERM.write_success('Successfuly estaablished individual security parameters.')
+            TERM.write_info("Establishing collective security parameters...")
+
+        # establish the collective security parameters.
+        cpk = server.col_key_gen(list(self.selected_client_responses.values()))
+        self.selected_client_responses = {}
+        self.broadcast(self.selected_clients_by_addr.keys, cpk)
+        
+        # attempt to get acknowledgements from the clients.
+        if STATUS.failure(self.get_responses()):
+            if debug_level >= DEBUG_LEVEL.INFO:
+                TERM.write_warning('Time Limit Exceeded: Failed to establish collective security parameters.')
+            return STATUS.FAILURE
+
+        if debug_level >= DEBUG_LEVEL.INFO:
+            TERM.write_success('Successfuly estaablished collective security parameters.')
+        
+        return STATUS.SUCCESS
+
     def train(self):
+        if debug_level >= DEBUG_LEVEL.INFO:
+            TERM.write_info("Broadcasting model and requesting updates...")
+        # send model to all clients.
+        self.selected_client_responses = {}
+        self.broadcast(self.selected_clients_by_addr.keys(), self.trainer.model.state_dict())
+        
+        # attempt to get updates from the clients.
+        if STATUS.failure(self.get_responses()):
+            if debug_level >= DEBUG_LEVEL.INFO:
+                TERM.write_warning('Time Limit Exceeded: Failed to receive updates from all clients.')
+            return STATUS.FAILURE
+
+        if debug_level >= DEBUG_LEVEL.INFO:
+            TERM.write_success("Successfully recieved updates from all clients.")
+        return STATUS.SUCCESS
+
+    def aggregate(self):
+        if debug_level >= DEBUG_LEVEL.INFO:
+            TERM.write_info("Aggregating updates...")
+        agg = self.encrpyter.aggregate(list(self.selected_client_responses.values()))
+
+        if debug_level >= DEBUG_LEVEL.INFO:
+            TERM.write_success("Successfully aggregated updates.")
+            TERM.write_info("Requesting collective security switches...")
+
+        self.selected_client_responses = {}
+        self.broadcast(self.selected_clients_by_addr.keys, agg)
+
+        # attempt to get acknowledgement from the clients.
+        if STATUS.failure(self.get_responses()):
+            if debug_level >= DEBUG_LEVEL.INFO:
+                TERM.write_warning('Time Limit Exceeded: Failed to receive acknowledgement from all clients.')
+            return STATUS.FAILURE
+
+        if debug_level >= DEBUG_LEVEL.INFO:
+            TERM.write_success("Successfully recieved acknowledgement from all clients.")
+        
+        # perform collective key switching.
+        cks_shares = list(self.selected_client_responses.values())
+        self.encrpyter.col_key_switch(agg, cks_shares)
+        # average the aggregate update.
+        self.encrpyter.average(len(cks_shares))
+        # load the new model.
+        # TODO: HERE.
+        return STATUS.SUCCESS
+
+    # Executes FL Training Loop
+    def loop(self):
         while len(self.connected_clients_by_addr) > 0:
-            # select a subset of the clients and broadcast the model.
-            if debug_level >= DEBUG_LEVEL.INFO:
-                TERM.write_info("Selecting clients...")
-
-            self.select_clients(self.subset_size)
-
-            if debug_level >= DEBUG_LEVEL.INFO:
-                TERM.write_info("Broadcasting model...")
-
-            self.broadcast_model()
-
-            if debug_level >= DEBUG_LEVEL.INFO:
-                TERM.write_info("Waiting for updates...(Timeout: " + str(self.TIMEOUT) + ")")
-
-            start = time.time()
-
-            # wait for each client's update and then aggregate.
-            while (self.aggregated_update is None) and time.time() - start < self.TIMEOUT:
-                self.wait_for_updates()
-                self.attempt_to_aggregate_updates()
-
-            # if an aggregated update has been created...
-            if self.aggregated_update is not None:
-                # Stop communication (temporarily)
-                self.stop()
-
-                if debug_level >= DEBUG_LEVEL.INFO:
-                    TERM.write_success("All updates received.")
-                    TERM.write_info("Aggregating updates...")
-
-                # Update the model using aggregated update.
-                self.update_model(self.aggregated_update)
-                self.aggregated_update = None
-
-                # reset the selected client address list (to be re-selected)
-                self.selected_clients_by_addr = {}
-                self.selected_clients_updates = {}
-
-                if debug_level >= DEBUG_LEVEL.INFO:
-                    TERM.write_info("Sending aggregated update to clients...")
-
-                # Restart communication.
-                self.start()
-            else:
-                if debug_level >= DEBUG_LEVEL.INFO:
-                    TERM.write_warning("Time-limit exceeded: Some updates were not received.")
+            if (STATUS.failed(self.setup()): continue
+            if (STATUS.failed(self.train()): continue
+            if (STATUS.failed(self.aggregate()): continue
 
         if debug_level >= DEBUG_LEVEL.INFO:
             TERM.write_failure("All clients disconected.")
-
-    ### FL Training Loop ###
 
     # Randomly select subset of all client to train on
     # TODO: Customizable random selection
@@ -154,29 +199,20 @@ class FLServer(Server):
                 sock = self.connected_clients_by_addr[addr]
                 self.selected_clients_by_addr[addr] = sock
                 self.selected_clients_by_sock[sock] = addr
-
-    # Broadcast model to selected clients so they can train
-    def broadcast_model(self):
-        # Verify there are clients
-        if len(self.selected_clients_by_addr) > 0:
-            self.broadcast(self.selected_clients_by_addr.keys(), self.trainer.model.state_dict())
-            return True
-
-        return False
-
-    # Retrieve updates of selected clients
-    def wait_for_updates(self):
-        # attempt to get a message from more clients.
-        readable_clients_socks, _, _ = select.select(self.selected_clients_by_addr.values(), [], [])
-        for sock in readable_clients_socks:
-            self.selected_clients_updates[self.selected_clients_by_sock[sock]] = Communication_Handler.recv_msg(sock)
     
-    # Aggregate Updates once the subset of selected clients are ready
-    def attempt_to_aggregate_updates(self):
-        # check if all clients have provided data.
-        if len(self.selected_clients_updates) == len(self.selected_clients_by_addr):
-            # Aggregate the updates.
-            self.aggregated_update = self.trainer.aggregate(self.selected_clients_updates.values())
+    # Retrieve responses of selected clients
+    def get_responses(self, timeout = 1000000):
+        self.selected_client_responses = {}
+        start = time.time()
+
+        while time.time() - start < self.TIMEOUT:
+            # attempt to get a message from another client.
+            readable_clients_socks, _, _ = select.select(self.selected_clients_by_addr.values(), [], [])
+            for sock in readable_clients_socks:
+                self.selected_client_responses[self.selected_clients_by_sock[sock]] = Communication_Handler.recv_msg(sock)
+            if len(self.selected_client_responses) == len(self.selected_clients_by_addr):
+                return SUCCESS
+        return len(self.selected_client_responses)
 
     # Update server model (centralized model)
     def update_model(self, aggregated_update):
@@ -207,4 +243,4 @@ if __name__ == '__main__':
         # Train the FL server model.
         TERM.write_warning('Time limit exceeded: ' + str(len(flServer.connected_clients_by_addr)) + ' client(s) connected.')
         TERM.write_info("Starting FL training loop...")
-        flServer.train()
+        flServer.loop()

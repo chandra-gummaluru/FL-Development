@@ -1,5 +1,14 @@
 import time, sys, threading, errno, socket, pickle, math, struct
 
+class STATUS:
+    SUCCESS = 0
+    FAILURE = 1
+
+    def failed(expr):
+        return expr == FAILURE
+    def success(expr):
+        return expr == SUCCESS
+
 class DEBUG_LEVEL:
     NONE = 0
     ERRORS = 1

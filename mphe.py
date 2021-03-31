@@ -194,6 +194,16 @@ class MPHEServer:
 
         self.data = _Conversion.from_data(enc_data.contents)
     
+    def decrypt(self):
+        params = self.params.make_structure()
+        sk = _Conversion.to_poly(self.secret_key)
+        ct = _Conversion.to_data(self.data)
+
+        dec_data = _decrypt(byref(params), byref(sk), byref(ct))
+        dec_data = _Conversion.to_list(dec_data.contents)
+
+        return dec_data
+
     def gen_crs(self):
         params = self.params.make_structure()
 
@@ -465,11 +475,11 @@ if __name__ == '__main__':
     secret_key = simulate_network_comm(secret_key)
 
     client1 = MPHEClient()
-    client1.define_scheme(params, server.secret_key)
+    client1.define_scheme(params, secret_key)
     client1.update = np.array([ 0.0, 1.0 , 1.0, 0.0])
 
     client2 = MPHEClient()
-    client2.define_scheme(params, server.secret_key)
+    client2.define_scheme(params, secret_key)
     client2.update = np.array([ -1.0, 0.0, 1.0, 0.0 ])
 
     # DEBUG: Initial model
@@ -496,12 +506,6 @@ if __name__ == '__main__':
         client1.crs = crs
         client2.crs = crs
 
-        client1.data = client1.decrypt(encrypted_model)
-        client2.data = client2.decrypt(encrypted_model)
-
-        client1.data = (np.array(client1.data) + client1.update).tolist()
-        client2.data = (np.array(client2.data) + client2.update).tolist()
-
         ## Collective Key Generation ##
 
         client1.gen_key()
@@ -519,7 +523,13 @@ if __name__ == '__main__':
         # Network Communication (3)
         cpk = simulate_network_comm(cpk)
 
-        ## Clients send encrypted updates to Server ##
+        ## Clients send encrypted updates to Server (TRAIN) ##
+
+        client1.data = client1.decrypt(encrypted_model)
+        client2.data = client2.decrypt(encrypted_model)
+
+        client1.data = (np.array(client1.data) + client1.update).tolist()
+        client2.data = (np.array(client2.data) + client2.update).tolist()
 
         updates = []
         updates.append(client1.encrypt(cpk, client1.data))
