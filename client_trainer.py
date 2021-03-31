@@ -61,7 +61,7 @@ class ClientTrainer():
 
     # Compute focused update to send
     def focused_update(self):
-        return self.model.state_dict()
+        return self.model
 
     def train(self):
         # Optimization Settings
@@ -109,8 +109,10 @@ class ClientTrainer():
         if debug_level >= DEBUG_LEVEL.INFO:
             TERM.write('\t%0.2f minutes' %((end - start) / 60))
 
-    ### Helper Functions ###
 
+    ### Helper Functions ###
+        
+        
     def evaluate_accuracy(self, data_loader):
         # Cache results for each class
         correct_by_class = torch.zeros(10)

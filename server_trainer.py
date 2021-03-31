@@ -2,6 +2,10 @@ import torch
 import torchvision
 import torchvision.transforms as transforms
 from torch.utils.data import DataLoader
+import torch.nn.functional as F
+import torch.nn as nn
+import numpy as np
+from collections import OrderedDict
 
 import numpy as np
 np.set_printoptions(formatter={'float': lambda x: "{0:0.2f}".format(x)})
@@ -31,6 +35,7 @@ class ServerTrainer():
             self.model = self.model.cuda()
 
     ### Training Program ###
+    
 
     # Aggregate updates into a single update
     def aggregate(self, updates):
@@ -39,13 +44,14 @@ class ServerTrainer():
 
         for key in aggregate_update:
             # Accumulate the updates
-            for update in updates:
+            for update in updates.values():
                 aggregate_update[key] += update[key]
 
             # Average
             aggregate_update[key] /= len(updates)
 
         return aggregate_update
+        
 
     # Apply the aggregate update to the model
     def update(self, aggregate_update):

@@ -5,7 +5,7 @@ import utils
 from utils import DEBUG_LEVEL, TERM, Communication_Handler
 
 import server_trainer
-
+import compressor
 debug_level = DEBUG_LEVEL.INFO
 
 class Server():
@@ -70,7 +70,7 @@ class Server():
 
 class FLServer(Server):
 
-    def __init__(self, host, trainer):
+    def __init__(self, host, trainer, compressor):
         super(FLServer, self).__init__(host)
 
         # Client selected for FL.
@@ -85,6 +85,7 @@ class FLServer(Server):
         # TODO: Encapsulate these in a class.
         # FL Model trainer
         self.trainer = trainer
+        self.compressor = compressor
         self.subset_size = 3 # Default
 
         # Timeout.
@@ -111,7 +112,13 @@ class FLServer(Server):
 
             # wait for each client's update and then aggregate.
             while (self.aggregated_update is None) and time.time() - start < self.TIMEOUT:
-                self.wait_for_updates()
+
+                compressed_update, addr = self.wait_for_next_update()
+                # decompress the update here.
+                decompressed_update = self.compressor.decompress(compressed_update)
+
+                # cache the decompressed up.
+                self.selected_clients_updates[addr] = decompressed_update
                 self.attempt_to_aggregate_updates()
 
             # if an aggregated update has been created...
@@ -160,24 +167,27 @@ class FLServer(Server):
     def broadcast_model(self):
         # Verify there are clients
         if len(self.selected_clients_by_addr) > 0:
-            self.broadcast(self.selected_clients_by_addr.keys(), self.trainer.model.state_dict())
+            model = self.trainer.model
+            compressed_updates = self.compressor.compress(model)
+            self.broadcast(self.selected_clients_by_addr.keys(), compressed_updates)
             return True
 
         return False
 
-    # Retrieve updates of selected clients
-    def wait_for_updates(self):
+    # Wait for the next update.
+    def wait_for_next_update(self):
         # attempt to get a message from more clients.
         readable_clients_socks, _, _ = select.select(self.selected_clients_by_addr.values(), [], [])
-        for sock in readable_clients_socks:
-            self.selected_clients_updates[self.selected_clients_by_sock[sock]] = Communication_Handler.recv_msg(sock)
-    
+        sock = readable_clients_socks[0]
+        return Communication_Handler.recv_msg(sock), self.selected_clients_by_sock[sock]
+            
+            
     # Aggregate Updates once the subset of selected clients are ready
     def attempt_to_aggregate_updates(self):
         # check if all clients have provided data.
         if len(self.selected_clients_updates) == len(self.selected_clients_by_addr):
             # Aggregate the updates.
-            self.aggregated_update = self.trainer.aggregate(self.selected_clients_updates.values())
+            self.aggregated_update = self.trainer.aggregate(self.selected_clients_updates)
 
     # Update server model (centralized model)
     def update_model(self, aggregated_update):
@@ -185,7 +195,7 @@ class FLServer(Server):
 
 ### Main Code ###
 
-BUFFER_TIME = 5
+BUFFER_TIME = 10
 
 if __name__ == '__main__':
     # the socket for the server.
@@ -193,7 +203,8 @@ if __name__ == '__main__':
     server_port = 8080
 
     # Initialize the FL server.
-    flServer = FLServer((server_hostname, server_port),  server_trainer.ServerTrainer())
+    flServer = FLServer((server_hostname, server_port),  server_trainer.ServerTrainer(), compressor.Compressor()) 
+    #TODO: Create a compressor and put it into the FLServer.
 
     # Allow client to connect
     flServer.start()

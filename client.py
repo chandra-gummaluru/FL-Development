@@ -4,7 +4,7 @@ import utils
 from utils import DEBUG_LEVEL, TERM, Communication_Handler
 
 import client_trainer
-
+import compressor
 debug_level = DEBUG_LEVEL.INFO
 
 class Client():
@@ -51,12 +51,13 @@ class Client():
 
 # Handles FL Client training loop logic
 class FLClient(Client):
-    def __init__(self, server, trainer):
+    def __init__(self, server, trainer, compressor):
         super(FLClient, self).__init__(server)
 
         # Training Program (specific to the model being trained)
         self.trainer = trainer
         self.TIMEOUT = 100000000000
+        self.compressor = compressor
 
     ### FL Training Loop ###
 
@@ -79,9 +80,14 @@ class FLClient(Client):
                     if debug_level >= DEBUG_LEVEL.INFO:
                         TERM.write_success("Weights received.")
                         TERM.write_info("Training local model...")
-
+                        
+                        
+                    # Reconstruction on weights
+                    decompressed_weights = self.compressor.decompress(weights)
+                    
+                    
                     # Load weights
-                    self.trainer.load_weights(weights)
+                    self.trainer.load_weights(decompressed_weights)
 
                     # Train model
                     self.trainer.train()
@@ -93,8 +99,11 @@ class FLClient(Client):
                     # Compute focused update
                     update = self.trainer.focused_update()
 
+                    # Compression
+
+                    compressed_update = self.compressor.compress(update)
                     # Send update to the server
-                    Communication_Handler.send_msg(self.sock, update)
+                    Communication_Handler.send_msg(self.sock, compressed_update)
 
                     if debug_level >= DEBUG_LEVEL.INFO:
                         TERM.write_success("Update sent.")
@@ -111,5 +120,5 @@ if __name__ == '__main__':
     nums = [[3, 5, 7, 9], [0, 1, 8], [2, 4, 6]]
 
     # Instantiate FL client with Training program
-    client = FLClient(SERVER, client_trainer.ClientTrainer(nums[idx]))
+    client = FLClient(SERVER, client_trainer.ClientTrainer(nums[idx]), compressor.Compressor())
     client.connect(5)
