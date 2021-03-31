@@ -168,5 +168,7 @@ func (s server) PrintCurrentModel() {
 	encoder := ckks.NewEncoder(s.params)
 	value := encoder.Decode(plaintext, s.params.LogSlots())[0]
 
+	v := s.ciphertext.Element.Value()
+	fmt.Printf("Cipher text size: %v, %v, %v, %v\n", len(v), len(v[0].Coeffs), len(v[0].Coeffs[0]), v[0].Coeffs[0][0])
 	fmt.Printf("(SERVER) Current Model is %v\n", value)
 }

@@ -87,7 +87,13 @@ import (
 )
 
 // Hardcoded security parameters
-var PARAMS *ckks.Parameters = ckks.DefaultParams[ckks.PN12QP109]
+var LOGN uint64 = uint64(4)
+var LOGSLOTS uint64 = uint64(3)
+var SCALE float64 = float64(1 << 30)
+var LOGMODULI ckks.LogModuli = ckks.LogModuli{
+	LogQi: []uint64{35, 60, 60},
+	LogPi: []uint64{30},
+}
 var SMUDGE float64 = 3.19
 
 /// MPHE Server
@@ -97,6 +103,10 @@ func newMPHEServer() *C.MPHEServer {
 	server := (*C.MPHEServer)(C.malloc(C.sizeof_MPHEServer))
 
 	// HARDCODED: CKKS Security Parameters
+	PARAMS, _ := ckks.NewParametersFromLogModuli(LOGN, &LOGMODULI)
+	PARAMS.SetScale(SCALE)
+	PARAMS.SetLogSlots(LOGSLOTS)
+
 	server.params = *convParams(PARAMS)
 
 	// Generate CRS
@@ -242,6 +252,10 @@ func newMPHEClient() *C.MPHEClient {
 	client := (*C.MPHEClient)(C.malloc(C.sizeof_MPHEClient))
 
 	// HARDCODED: CKKS Security Parameters
+	PARAMS, _ := ckks.NewParametersFromLogModuli(LOGN, &LOGMODULI)
+	PARAMS.SetScale(SCALE)
+	PARAMS.SetLogSlots(LOGSLOTS)
+	
 	client.params = *convParams(PARAMS)
 
 	return client

@@ -5,9 +5,9 @@ class STATUS:
     FAILURE = 1
 
     def failed(expr):
-        return expr == FAILURE
+        return expr == STATUS.FAILURE
     def success(expr):
-        return expr == SUCCESS
+        return expr == STATUS.SUCCESS
 
 class DEBUG_LEVEL:
     NONE = 0

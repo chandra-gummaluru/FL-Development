@@ -497,6 +497,9 @@ if __name__ == '__main__':
         encrypted_model = server.data
         crs = server.gen_crs()
 
+        ct = encrypted_model[0].value
+        # print('Size:', len(encrypted_model), len(ct), len(ct[0]), len(ct[0][0]), ct[0][0][0])
+
         # Network Communication (1)
         encrypted_model = simulate_network_comm(encrypted_model)
         crs = simulate_network_comm(crs)

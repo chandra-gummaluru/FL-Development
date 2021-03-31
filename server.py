@@ -16,6 +16,7 @@ class Server():
 
         # the socket to listen for connections on.
         self.listener_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.listener_sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         self.listener_sock.bind(host)
 
         self.listener_process = None
@@ -88,7 +89,7 @@ class FLServer(Server):
         self.subset_size = 3 # Default
 
         # Encryption module.
-        self.encrpyter = MPHEServer()
+        self.encrypter = mphe.MPHEServer()
 
         # Timeout.
         self.TIMEOUT = 100000000000
@@ -103,11 +104,11 @@ class FLServer(Server):
             TERM.write_success('Successfuly selected clients.')
             TERM.write_info("Requesting CKG shares...")
         # establish the individual security parameters with each client.
-        security_params = (self.encrypter.params, self.encrypter.secret_key, self.encrpyter.gen_crs())
-        self.broadcast(self.selected_clients_by_addr.keys, security_params)
+        security_params = (self.encrypter.params, self.encrypter.secret_key, self.encrypter.gen_crs())
+        self.broadcast(self.selected_clients_by_addr.keys(), security_params)
 
         # attempt to get responses from the clients.
-        if STATUS.failure(self.get_responses()):
+        if STATUS.failed(self.get_responses()):
             if debug_level >= DEBUG_LEVEL.INFO:
                 TERM.write_warning('Time Limit Exceeded: Failed to receive CKG shares from all clients.')
             return STATUS.FAILURE
@@ -117,9 +118,9 @@ class FLServer(Server):
             TERM.write_info("Performing CKG...")
 
         # establish the collective security parameters.
-        cpk = server.col_key_gen(list(self.selected_client_responses.values()))
+        cpk = self.encrypter.col_key_gen(list(self.selected_client_responses.values()))
         self.selected_client_responses = {}
-        self.broadcast(self.selected_clients_by_addr.keys, cpk)
+        self.broadcast(self.selected_clients_by_addr.keys(), cpk)
 
         if debug_level >= DEBUG_LEVEL.INFO:
             TERM.write_success('Successfully performed CKG.')
@@ -131,10 +132,11 @@ class FLServer(Server):
             TERM.write_info("Broadcasting model and requesting updates...")
         # send model to all clients.
         self.selected_client_responses = {}
+        # print('(SERVER) Initial State dict entry:', self.trainer.model.state_dict()['conv1.weight'][0][0][0])
         self.broadcast(self.selected_clients_by_addr.keys(), self.trainer.model.state_dict())
 
         # attempt to get updates from the clients.
-        if STATUS.failure(self.get_responses()):
+        if STATUS.failed(self.get_responses()):
             if debug_level >= DEBUG_LEVEL.INFO:
                 TERM.write_warning('Time Limit Exceeded: Failed to receive updates from all clients.')
             return STATUS.FAILURE
@@ -146,17 +148,17 @@ class FLServer(Server):
     def aggregate(self):
         if debug_level >= DEBUG_LEVEL.INFO:
             TERM.write_info("Aggregating updates...")
-        agg = self.encrpyter.aggregate(list(self.selected_client_responses.values()))
+        agg = self.encrypter.aggregate(list(self.selected_client_responses.values()))
 
         if debug_level >= DEBUG_LEVEL.INFO:
             TERM.write_success("Successfully aggregated updates.")
             TERM.write_info("Requesting CKS shares...")
 
         self.selected_client_responses = {}
-        self.broadcast(self.selected_clients_by_addr.keys, agg)
+        self.broadcast(self.selected_clients_by_addr.keys(), agg)
 
         # attempt to get CKS shares from the clients.
-        if STATUS.failure(self.get_responses()):
+        if STATUS.failed(self.get_responses()):
             if debug_level >= DEBUG_LEVEL.INFO:
                 TERM.write_warning('Time Limit Exceeded: Failed to receive CKS shares from all clients.')
             return STATUS.FAILURE
@@ -166,19 +168,19 @@ class FLServer(Server):
 
         # perform CKS.
         cks_shares = list(self.selected_client_responses.values())
-        self.encrpyter.col_key_switch(agg, cks_shares)
+        self.encrypter.col_key_switch(agg, cks_shares)
         # average the aggregate update.
-        self.encrpyter.average(len(cks_shares))
+        self.encrypter.average(len(cks_shares))
         # load the new model.
-        self.trainer.update_model(self.encrypter.data)
+        self.trainer.update_model(self.encrypter.decrypt())
         return STATUS.SUCCESS
 
     # Executes FL Training Loop
     def loop(self):
         while len(self.connected_clients_by_addr) > 0:
-            if (STATUS.failed(self.setup()): continue
-            if (STATUS.failed(self.train()): continue
-            if (STATUS.failed(self.aggregate()): continue
+            if STATUS.failed(self.setup()): continue
+            if STATUS.failed(self.train()): continue
+            if STATUS.failed(self.aggregate()): continue
 
         if debug_level >= DEBUG_LEVEL.INFO:
             TERM.write_failure("All clients disconected.")
@@ -205,8 +207,8 @@ class FLServer(Server):
             for sock in readable_clients_socks:
                 self.selected_client_responses[self.selected_clients_by_sock[sock]] = Communication_Handler.recv_msg(sock)
             if len(self.selected_client_responses) == len(self.selected_clients_by_addr):
-                return SUCCESS
-        return len(self.selected_client_responses)
+                return STATUS.SUCCESS
+        return STATUS.FAILURE
 
     # Update server model (centralized model)
     def update_model(self, aggregated_update):

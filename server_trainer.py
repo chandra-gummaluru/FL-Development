@@ -81,16 +81,32 @@ class ServerTrainer():
 
     # load the model from a flat update.
     def update_model(self, flat_update):
+        flat_update = np.array(flat_update)
         state_dict = {}
         last = 0
-        for layer, (shape, size) in self.model_arch():
-        self.model.state_dict[layer] = flat_update[last : last + size].reshape(shape)
+        for layer, (shape, _size) in self.model_arch().items():
+            arr = (flat_update[last : last + _size]).reshape(shape)
+            state_dict[layer] = torch.from_numpy(arr)
+            last += _size
+        self.model.load_state_dict(state_dict)
+        # print('(SERVER) Updated State dict entry:', self.model.state_dict()['conv1.weight'][0][0][0])
+
+        # Compute Accuracy (test)
+        acc = self.compute_accuracy(self.test_loader)
+        self.test_acc.append(acc)
+
+        if debug_level >= DEBUG_LEVEL.INFO:
+            TERM.write('\tEpoch ' + str(len(self.test_acc) - 1) + '\n')
+            TERM.write('\tClass Accuracies: {}'.format(100 * np.array(self.test_acc[-1])))
+
+        # Occasionally save current test accuracy
+        self.save_to_csv(acc, './train_curves/Server.csv')
 
     # compute the model architecture.
     def model_arch(self):
         arch = {}
-        for layer, weights in self.model.state_dict():
-            arch[layer] = (weights.shape, weights.size)
+        for layer, weights in self.model.state_dict().items():
+            arch[layer] = (weights.shape, torch.numel(weights))
         return arch
 
     # Load test dataset

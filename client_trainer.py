@@ -62,17 +62,17 @@ class ClientTrainer():
     # compute the model architecture.
     def model_arch(self):
         sizes = {}
-        for layer, weights in self.model.state_dict():
+        for layer, weights in self.model.state_dict().items():
             sizes[layer] = weights.shape
         return sizes
 
     # Compute a flat update to send
     def flat_update(self):
-        params = []
-        for layer, weights in self.model.state_dict():
-            params.append(weights)
+        params = np.array([])
+        for layer, weights in self.model.state_dict().items():
+            params = np.concatenate((params, weights.numpy().flatten()))
         params = np.array(params).flatten()
-        return params
+        return params.tolist()
 
     def train(self):
         # Optimization Settings
@@ -114,7 +114,7 @@ class ClientTrainer():
 
             with open('./train_curves/Client{}.csv'.format(self.digits), 'a', newline='') as csv_file:
                 writer = csv.writer(csv_file)
-                writer.writerow(train_acc_list)
+                writer.writerow(test_acc_list)
         end = time.time()
 
         if debug_level >= DEBUG_LEVEL.INFO:

@@ -13,7 +13,19 @@ func mpheSimulate() {
 	/* Initialization */
 
 	// Encryption scheme parameters
-	params := ckks.DefaultParams[ckks.PN12QP109]
+	// logN := uint64(4)
+	logN := uint64(4)//(14)
+	logSlots := uint64(3)//(13)
+	scale := float64(1 << 30)//40)
+	logModuli := ckks.LogModuli{
+		LogQi: []uint64{35, 60, 60},
+		LogPi: []uint64{30},
+	}
+	// params := ckks.DefaultParams[ckks.PN12QP109]
+	params, err := ckks.NewParametersFromLogModuli(logN, &logModuli)
+	params.SetScale(scale)
+	params.SetLogSlots(logSlots)
+	fmt.Printf("ERROR: %+v\n", err)
 
 	// Initialize Server
 	server := parties.NewServer(params, complex(0.0, 0.0))
@@ -27,7 +39,7 @@ func mpheSimulate() {
 
 	/* Simulate MPHE iterations */
 
-	maxIters := 3
+	maxIters := 20
 
 	for i := 0 ; i < maxIters ; i++ {
 		fmt.Printf("\nITERATION %d\n\n", i)
