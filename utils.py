@@ -117,3 +117,6 @@ def state_dict_to_list(state_dict):
         flat = np.concatenate((flat, weights.numpy().flatten()))
     
     return flat.flatten().tolist()
+
+# Seed for reproducibility
+SEED = 2020204

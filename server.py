@@ -5,9 +5,15 @@ import utils
 from utils import DEBUG_LEVEL, TERM, STATUS, Communication_Handler
 
 import mphe
+from compressor import Compressor
 import server_trainer
 
 debug_level = DEBUG_LEVEL.INFO
+
+# NOTE: Seed for determining compression dropout indices. This seed serves simulation
+# purposes only. In theory, a completed Federated Dropout compression scheme would
+# send the relevant seed to each client over the network at each round.
+RANDOM = random.Random(utils.SEED)
 
 class Server():
     def __init__(self, host):
@@ -157,6 +163,13 @@ class FLServer(Server):
     # NOTE: in theory server should send encrypted model weights, but for now it does not
     def train(self):
         # TODO: Compress model
+        # NOTE: the following simulates compression by setting a fraction of
+        # the model weights to zero but sends the full model nonetheless.
+        if debug_level >= DEBUG_LEVEL.INFO:
+            TERM.write_info("Simulate Compression!")
+        
+        zeros_seed = RANDOM.randint(0, utils.SEED)
+        Compressor.dropout_weights(self.trainer.model, zeros_seed)
 
         # Broadcast Server model to Clients
         if debug_level >= DEBUG_LEVEL.INFO:

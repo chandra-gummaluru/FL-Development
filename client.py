@@ -1,12 +1,18 @@
-import time, sys, multiprocessing, errno, socket
+import time, sys, multiprocessing, errno, socket, random
 
 import utils
 from utils import DEBUG_LEVEL, STATUS, TERM, Communication_Handler
 
 import mphe
+from compressor import Compressor
 import client_trainer
 
 debug_level = DEBUG_LEVEL.INFO
+
+# NOTE: Seed for determining compression dropout indices. This seed serves simulation
+# purposes only. In theory, a completed Federated Dropout compression scheme would
+# send the relevant seed to each client over the network at each round.
+RANDOM = random.Random(utils.SEED)
 
 class Client():
     def __init__(self, server, name = None):
@@ -49,7 +55,6 @@ class Client():
             if debug_level >= DEBUG_LEVEL.INFO:
                 TERM.write_success('Successfully connected to {} as {}'.format(SERVER, self.sock.getsockname()))
             self.loop()
-
 
 # Handles FL Client training loop logic
 class FLClient(Client):
@@ -139,18 +144,25 @@ class FLClient(Client):
 
     # Compress, Encrypt and Send Update + Reset Encryption Scheme
     def update(self):
-        if debug_level >= DEBUG_LEVEL.INFO:
-            TERM.write_info("Sending update to server...")
-
         focused_update = self.trainer.focused_update()
 
         # TODO: Compress update
+        # NOTE: the following simulates compression by setting a fraction of
+        # the model weights to zero but sends the full model nonetheless.
+        if debug_level >= DEBUG_LEVEL.INFO:
+            TERM.write_info("Simulate Compression!")
+        
+        zeros_seed = RANDOM.randint(0, utils.SEED)
+        Compressor.dropout_weights(self.trainer.model, zeros_seed)
 
         # Encrypt update
         if self.cipher is not None:
             flat_update = utils.state_dict_to_list(focused_update)
             focused_update = self.cipher.encrypt(self.cpk, flat_update)
         
+        if debug_level >= DEBUG_LEVEL.INFO:
+            TERM.write_info("Sending update to server...")
+
         # Send update to the Server
         Communication_Handler.send_msg(self.sock, focused_update)
 

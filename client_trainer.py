@@ -17,6 +17,7 @@ import utils
 from utils import DEBUG_LEVEL, TERM
 
 debug_level = DEBUG_LEVEL.INFO
+torch.manual_seed(utils.SEED)
 
 class ClientTrainer():
     def __init__(self, local_client_digits, use_cuda=True):

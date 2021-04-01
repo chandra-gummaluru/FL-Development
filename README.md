@@ -30,5 +30,5 @@ python3 -m pip freeze -l > requirements.txt
 If you are getting an error when importing `./mphe/_mphe.so` (in `mphe.py`) then you need to build it yourself using [Go](https://golang.org/doc/install).
 ```bash
 cd ./mphe
-go build -buildmode=c-shares -o _mphe.so
+go build -buildmode=c-shared -o _mphe.so
 ```
