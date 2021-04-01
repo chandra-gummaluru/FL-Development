@@ -1,10 +1,9 @@
 import time, sys, multiprocessing, errno, socket
 
 import utils
-from utils import DEBUG_LEVEL, TERM, Communication_Handler, STATUS
+from utils import DEBUG_LEVEL, STATUS, TERM, Communication_Handler
 
 import mphe
-
 import client_trainer
 
 debug_level = DEBUG_LEVEL.INFO
@@ -19,7 +18,7 @@ class Client():
 
         self.name = 'anon_client' if not name else name
 
-    # Attempt to connect to the Server.
+    # Attempt to immediately connect to the Server.
     def attempt_to_connect(self, TIMEOUT):
         try:
             # Connect socket
@@ -28,6 +27,7 @@ class Client():
         except:
             self.connected = False
 
+    # Try to connect to the Server for TIMEOUT duration
     def connect(self, TIMEOUT):
         if debug_level >= DEBUG_LEVEL.INFO:
             TERM.write_info('Attempting to connect to {} (Timeout: {}s)'.format(self.server, TIMEOUT))
@@ -60,103 +60,142 @@ class FLClient(Client):
         self.trainer = trainer
         self.encrypter = mphe.MPHEClient()
         self.cpk = None
-        self.TIMEOUT = 100000000000
+        self.TIMEOUT = float('inf')
 
     ### FL Training Loop ###
 
-    def wait_for_response(self, timeout = None):
-        response = None
-        if timeout == None:
-            while response == None:
-                # attempt to get the response.
-                response = Communication_Handler.recv_msg(self.sock)
-        else:
-            start_time = time.time()
-            while response == None and (time.time() - start_time < self.TIMEOUT):
-                # attempt to get the response.
-                response = Communication_Handler.recv_msg(self.sock)
-        return response
+    # Main loop
+    def loop(self):
+        while True:
+            # Establish Encryption Scheme
+            if STATUS.failed(self.setup()): continue
 
+            # Receive and Decompress Server Model + Train on local dataset
+            if STATUS.failed(self.train()): continue
+
+            # Compress, Encrypt and Send Update + Reset Encryption Scheme
+            if STATUS.failed(self.update()): continue
+
+    # Establish Encryption Scheme
     def setup(self):
         if debug_level >= DEBUG_LEVEL.INFO:
             TERM.write_info('Waiting for selection...')
 
-        # establish individual security parameters with the server.
-        security_params = self.wait_for_response()
-        if debug_level >= DEBUG_LEVEL.INFO:
-            TERM.write_info('Sending CKG share to server...')
+        # TODO: Acknowledge selection by the Server
 
-        params, secret_key, crs = security_params
-        self.encrypter.define_scheme(params, secret_key)
-        self.encrypter.crs = crs
-        self.encrypter.gen_key()
+        if self.encrypter is not None:
+            # Cache security parameters from the Server
+            security_params = self.wait_for_response()
+            params, secret_key, crs = security_params
 
-        Communication_Handler.send_msg(self.sock, self.encrypter.gen_ckg_share())
-        self.cpk = self.wait_for_response()
+            # TODO: Check if what was actually received is a set of security parameters
 
-        if debug_level >= DEBUG_LEVEL.INFO:
-            TERM.write_success('Recieved CPK result.')
-        #TODO: Add failure case.
+            self.encrypter.define_scheme(params, secret_key)
+            self.encrypter.crs = crs
+
+            # Send CKG Share to the Server (for collective public key generation)
+            self.encrypter.gen_key()
+
+            if debug_level >= DEBUG_LEVEL.INFO:
+                TERM.write_info('Sending CKG share to server...')
+
+            Communication_Handler.send_msg(self.sock, self.encrypter.gen_ckg_share())
+
+            # Cache collective public key
+            self.cpk = self.wait_for_response()
+
+            # TODO: Check if what was actually received is the Collective Public Key
+
+            if debug_level >= DEBUG_LEVEL.INFO:
+                TERM.write_success('Recieved CPK result.')
+
         return STATUS.SUCCESS
 
+    # Receive and Decompress Server Model + Train on local dataset
+    # NOTE: in theory client receives encrypted server weights, but for now it does not
     def train(self):
         if debug_level >= DEBUG_LEVEL.INFO:
             TERM.write_info('Waiting for weights from server...')
 
+        # Receive Server model weights
         weights = self.wait_for_response()
+
+        # TODO: Decompress weights
+
+        # Initialize Client model with Server's weights
         self.trainer.model.load_state_dict(weights)
-        # print('(CLIENT) Received State dict entry:', self.trainer.model.state_dict()['conv1.weight'][0][0][0])
-        #weights = self.encrypter.decrypt(weights)
 
         if debug_level >= DEBUG_LEVEL.INFO:
             TERM.write_success('Successfully recieved weights from the server.')
             TERM.write_info('Training model...')
 
+        # Train model on local dataset
         self.trainer.train()
+
         if debug_level >= DEBUG_LEVEL.INFO:
             TERM.write_success("Successfully trained model.")
 
         return STATUS.SUCCESS
 
+    # Compress, Encrypt and Send Update + Reset Encryption Scheme
     def update(self):
         if debug_level >= DEBUG_LEVEL.INFO:
             TERM.write_info("Sending update to server...")
-        # print('flat update:', self.trainer.flat_update()[0])
-        # print('(CLIENT) Update State dict entry:', self.trainer.model.state_dict()['conv1.weight'][0][0][0])
-        encrypted_update = self.encrypter.encrypt(self.cpk, self.trainer.flat_update())
-        # Send update to the server
-        Communication_Handler.send_msg(self.sock, encrypted_update)
+
+        focused_update = self.trainer.focused_update()
+
+        # TODO: Compress update
+
+        # Encrypt update
+        if self.encrypter is not None:
+            flat_update = utils.state_dict_to_list(focused_update)
+            focused_update = self.encrypter.encrypt(self.cpk, flat_update)
+        
+        # Send update to the Server
+        Communication_Handler.send_msg(self.sock, focused_update)
 
         if debug_level >= DEBUG_LEVEL.INFO:
             TERM.write_success("Update sent.")
 
-        if debug_level >= DEBUG_LEVEL.INFO:
-            TERM.write_info("Waiting for aggregate update...")
-        aggregate_update = self.wait_for_response()
+        # Reset encryption scheme
+        if self.encrypter is not None:
+            # Retrieve aggregate from the Server that we want to key switch
+            if debug_level >= DEBUG_LEVEL.INFO:
+                TERM.write_info("Waiting for aggregate update...")
+            
+            # TODO: Check if what was actually received is the aggregate update
 
-        if debug_level >= DEBUG_LEVEL.INFO:
-            TERM.write_success("Successfully recieved aggregate update.")
-            TERM.write_info('Sending CKS share...')
+            aggregate_update = self.wait_for_response()
 
-        cks_share = self.encrypter.gen_cks_share(aggregate_update)
-        # Send update to the server
-        Communication_Handler.send_msg(self.sock, cks_share)
+            # Send CKS Share to the Server (for collective key switching)
+            if debug_level >= DEBUG_LEVEL.INFO:
+                TERM.write_success("Successfully recieved aggregate update.")
+                TERM.write_info('Sending CKS share...')
 
-        if debug_level >= DEBUG_LEVEL.INFO:
-            TERM.write_success("Successfully sent CKS share.")
+            cks_share = self.encrypter.gen_cks_share(aggregate_update)
+            Communication_Handler.send_msg(self.sock, cks_share)
+
+            if debug_level >= DEBUG_LEVEL.INFO:
+                TERM.write_success("Successfully sent CKS share.")
 
         return STATUS.SUCCESS
 
-    def loop(self):
-        while True:
-            if STATUS.failed(self.setup()): continue
-            if STATUS.failed(self.train()): continue
-            if STATUS.failed(self.update()): continue
+    ### Helper Functions ###
 
-### Main Code ###
+    def wait_for_response(self):
+        response = None
+        start_time = time.time()
+
+        # Attempt to get a response from the Server
+        while response == None and (time.time() - start_time < self.TIMEOUT):
+            response = Communication_Handler.recv_msg(self.sock)
+            
+        return response
+
+
+### MAIN CODE ###
 
 SERVER = (socket.gethostbyname('localhost'), 8080)
-#SERVER = ('192.168.2.26', 12050)   # TODO: pickle message gets truncated over local network
 
 if __name__ == '__main__':
 

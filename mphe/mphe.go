@@ -12,20 +12,20 @@ import (
 func mpheSimulate() {
 	/* Initialization */
 
-	// Encryption scheme parameters
-	// logN := uint64(4)
-	logN := uint64(4)//(14)
-	logSlots := uint64(3)//(13)
-	scale := float64(1 << 30)//40)
+	// Custom encryption scheme parameters
+	// NOTE: These values reflect the smallest ciphertext size (hence low security)
+	logN := uint64(4)
+	logSlots := uint64(3)
+	scale := float64(1 << 30)
 	logModuli := ckks.LogModuli{
 		LogQi: []uint64{35, 60, 60},
 		LogPi: []uint64{30},
 	}
+	
 	// params := ckks.DefaultParams[ckks.PN12QP109]
-	params, err := ckks.NewParametersFromLogModuli(logN, &logModuli)
+	params, _ := ckks.NewParametersFromLogModuli(logN, &logModuli)
 	params.SetScale(scale)
 	params.SetLogSlots(logSlots)
-	fmt.Printf("ERROR: %+v\n", err)
 
 	// Initialize Server
 	server := parties.NewServer(params, complex(0.0, 0.0))

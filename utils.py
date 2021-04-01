@@ -1,4 +1,6 @@
 import time, sys, threading, errno, socket, pickle, math, struct
+import numpy as np
+import torch
 
 class STATUS:
     SUCCESS = 0
@@ -38,6 +40,7 @@ class TERM:
     def write_warning(msg):
         sys.stdout.write(TERM.WARNING + msg + TERM.ENDC + '\n')
 
+# Handles generic communication between parties
 class Communication_Handler():
 
     def sendall(sock, msg):
@@ -62,6 +65,8 @@ class Communication_Handler():
             smsg = struct.pack('>I', smsg_len) + smsg
             # send the message.
             Communication_Handler.sendall(sock, smsg)
+        except KeyboardInterrupt:
+            exit()
         except:
             TERM.write_failure('Peer {}: Send Error \'{}\''.format('blah', sys.exc_info()[0]))
             return
@@ -75,6 +80,40 @@ class Communication_Handler():
                 smsg = Communication_Handler.recvall(sock, msg_len)
                 msg = pickle.loads(smsg)
                 return msg
+        except KeyboardInterrupt:
+            exit()
         except:
             TERM.write_failure('Peer {}: Receive error {}'.format('blah', sys.exc_info()[0]))
             return None
+
+### Conversion between list and state_dict ###
+
+def list_to_state_dict(flat, model):
+    # Initialize variables
+    state_dict = {}
+    flat_np = np.array(flat)
+
+    # Populate weights for each layer
+    last_idx = 0
+
+    for layer, weights in model.state_dict().items():
+        # Retrieve reshaping parameters
+        shape, numel = weights.shape, torch.numel(weights)
+        
+        # Slice and reshape weights for the current layer
+        array = (flat_np[last_idx:(last_idx + numel)]).reshape(shape)
+        state_dict[layer] = torch.from_numpy(array)
+
+        # Move to next slice
+        last_idx += numel
+    
+    return state_dict
+
+def state_dict_to_list(state_dict):
+    flat = np.array([])
+
+    # Copy and flatten weights
+    for layer, weights in state_dict.items():
+        flat = np.concatenate((flat, weights.numpy().flatten()))
+    
+    return flat.flatten().tolist()

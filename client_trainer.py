@@ -59,21 +59,11 @@ class ClientTrainer():
     def load_weights(self, weights):
         self.model.load_state_dict(weights)
 
-    # compute the model architecture.
-    def model_arch(self):
-        sizes = {}
-        for layer, weights in self.model.state_dict().items():
-            sizes[layer] = weights.shape
-        return sizes
-
-    # Compute a flat update to send
-    def flat_update(self):
-        params = np.array([])
-        for layer, weights in self.model.state_dict().items():
-            params = np.concatenate((params, weights.numpy().flatten()))
-        params = np.array(params).flatten()
-        return params.tolist()
-
+    # Compute focused update to send
+    def focused_update(self):
+        return self.model.state_dict()
+    
+    # Train model on local dataset
     def train(self):
         # Optimization Settings
         criterion = nn.CrossEntropyLoss()
@@ -115,6 +105,7 @@ class ClientTrainer():
             with open('./train_curves/Client{}.csv'.format(self.digits), 'a', newline='') as csv_file:
                 writer = csv.writer(csv_file)
                 writer.writerow(test_acc_list)
+        
         end = time.time()
 
         if debug_level >= DEBUG_LEVEL.INFO:
@@ -158,13 +149,16 @@ class ClientTrainer():
         return (correct_by_class / total_by_class).cpu().tolist(), float(acc.cpu())
 
 
-# TEST
-if __name__ == '__main__':
+### TEST ###
 
+if __name__ == '__main__':
     trainer = ClientTrainer([1, 2, 3], use_cuda=True)
+
     trainer.load_weights(trainer.model.state_dict())
     TERM.write('Weights loaded successfully!')
 
     trainer.train()
     TERM.write('Model trained successfully!')
+
+    trainer.focused_update()
     TERM.write('Focused update computed successfully!')

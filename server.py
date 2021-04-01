@@ -70,7 +70,6 @@ class Server():
                 Communication_Handler.send_msg(self.connected_clients_by_addr[client_addr], msg)
 
 class FLServer(Server):
-
     def __init__(self, host, trainer):
         super(FLServer, self).__init__(host)
 
@@ -88,54 +87,83 @@ class FLServer(Server):
         self.trainer = trainer
         self.subset_size = 3 # Default
 
-        # Encryption module.
+        # Encryption module
         self.encrypter = mphe.MPHEServer()
 
         # Timeout.
-        self.TIMEOUT = 100000000000
+        self.TIMEOUT = float('inf')
 
+    ### FL Training Loop ###
+
+    # Main loop
+    def loop(self):
+        while len(self.connected_clients_by_addr) > 0:
+            # Select Clients + Establish Encryption Scheme
+            if STATUS.failed(self.setup()): continue
+
+            # Compress and Send Model + Wait for Client Updates
+            if STATUS.failed(self.train()): continue
+
+            # Aggregate Client Updates + Reset Encryption Scheme + Decompress Model
+            if STATUS.failed(self.aggregate()): continue
+
+        if debug_level >= DEBUG_LEVEL.INFO:
+            TERM.write_failure("All clients disconected.")
+
+    # Select Clients + Establish Encryption Scheme
     def setup(self):
-        # select a subset of the clients.
+        # Select a subset of the clients
         if debug_level >= DEBUG_LEVEL.INFO:
             TERM.write_info("Selecting clients...")
 
         self.select_clients(self.subset_size)
+
         if debug_level >= DEBUG_LEVEL.INFO:
             TERM.write_success('Successfuly selected clients.')
             TERM.write_info("Requesting CKG shares...")
-        # establish the individual security parameters with each client.
-        security_params = (self.encrypter.params, self.encrypter.secret_key, self.encrypter.gen_crs())
-        self.broadcast(self.selected_clients_by_addr.keys(), security_params)
+        
+        # Establish encryption scheme between all parties
+        if self.encrypter is not None:
+            # Send the security parameters to all clients
+            security_params = (self.encrypter.params, self.encrypter.secret_key, self.encrypter.gen_crs())
+            self.broadcast(self.selected_clients_by_addr.keys(), security_params)
 
-        # attempt to get responses from the clients.
-        if STATUS.failed(self.get_responses()):
+            # Receive CKG Shares from Clients (for collective public key generation)
+            if STATUS.failed(self.get_responses()):
+                if debug_level >= DEBUG_LEVEL.INFO:
+                    TERM.write_warning('Time Limit Exceeded: Failed to receive CKG shares from all clients.')
+                return STATUS.FAILURE
+            
+            # TODO: Check if what was actually received is a CKG Share
+
             if debug_level >= DEBUG_LEVEL.INFO:
-                TERM.write_warning('Time Limit Exceeded: Failed to receive CKG shares from all clients.')
-            return STATUS.FAILURE
+                TERM.write_success('Successfuly received CKG shares from all clients.')
+                TERM.write_info("Performing CKG...")
 
-        if debug_level >= DEBUG_LEVEL.INFO:
-            TERM.write_success('Successfuly received CKG shares from all clients.')
-            TERM.write_info("Performing CKG...")
+            # Distribute collective public key (for Encryption)
+            cpk = self.encrypter.col_key_gen(list(self.selected_client_responses.values()))
+            
+            self.selected_client_responses = {}
+            self.broadcast(self.selected_clients_by_addr.keys(), cpk)
 
-        # establish the collective security parameters.
-        cpk = self.encrypter.col_key_gen(list(self.selected_client_responses.values()))
-        self.selected_client_responses = {}
-        self.broadcast(self.selected_clients_by_addr.keys(), cpk)
-
-        if debug_level >= DEBUG_LEVEL.INFO:
-            TERM.write_success('Successfully performed CKG.')
+            if debug_level >= DEBUG_LEVEL.INFO:
+                TERM.write_success('Successfully performed CKG.')
 
         return STATUS.SUCCESS
 
+    # Compress and Send Model + Wait for Client Updates
+    # NOTE: in theory server should send encrypted model weights, but for now it does not
     def train(self):
+        # TODO: Compress model
+
+        # Broadcast Server model to Clients
         if debug_level >= DEBUG_LEVEL.INFO:
             TERM.write_info("Broadcasting model and requesting updates...")
-        # send model to all clients.
+
         self.selected_client_responses = {}
-        # print('(SERVER) Initial State dict entry:', self.trainer.model.state_dict()['conv1.weight'][0][0][0])
         self.broadcast(self.selected_clients_by_addr.keys(), self.trainer.model.state_dict())
 
-        # attempt to get updates from the clients.
+        # Wait until Clients complete training and Server receives updates
         if STATUS.failed(self.get_responses()):
             if debug_level >= DEBUG_LEVEL.INFO:
                 TERM.write_warning('Time Limit Exceeded: Failed to receive updates from all clients.')
@@ -143,78 +171,99 @@ class FLServer(Server):
 
         if debug_level >= DEBUG_LEVEL.INFO:
             TERM.write_success("Successfully recieved updates from all clients.")
+        
         return STATUS.SUCCESS
 
+    # Aggregate Client Updates + Reset Encryption Scheme + Decompress Model
     def aggregate(self):
-        if debug_level >= DEBUG_LEVEL.INFO:
-            TERM.write_info("Aggregating updates...")
-        agg = self.encrypter.aggregate(list(self.selected_client_responses.values()))
+        # ASSUME: Client updates can be decompressed post-aggregation
+        
+        updates = list(self.selected_client_responses.values())
 
-        if debug_level >= DEBUG_LEVEL.INFO:
-            TERM.write_success("Successfully aggregated updates.")
-            TERM.write_info("Requesting CKS shares...")
-
-        self.selected_client_responses = {}
-        self.broadcast(self.selected_clients_by_addr.keys(), agg)
-
-        # attempt to get CKS shares from the clients.
-        if STATUS.failed(self.get_responses()):
+        if self.encrypter is None:
+            # Aggregate Client updates
+            update = self.trainer.aggregate(updates)
+        else:
+            # Aggregate encrypted Client updates
             if debug_level >= DEBUG_LEVEL.INFO:
-                TERM.write_warning('Time Limit Exceeded: Failed to receive CKS shares from all clients.')
-            return STATUS.FAILURE
+                TERM.write_info("Aggregating updates...")
+            
+            agg = self.encrypter.aggregate(updates)
 
-        if debug_level >= DEBUG_LEVEL.INFO:
-            TERM.write_success("Successfully recieved CKS shares from all clients.")
+            if debug_level >= DEBUG_LEVEL.INFO:
+                TERM.write_success("Successfully aggregated updates.")
+                TERM.write_info("Requesting CKS shares...")
 
-        # perform CKS.
-        cks_shares = list(self.selected_client_responses.values())
-        self.encrypter.col_key_switch(agg, cks_shares)
-        # average the aggregate update.
-        self.encrypter.average(len(cks_shares))
-        # load the new model.
-        self.trainer.update_model(self.encrypter.decrypt())
+            # Commence encryption scheme reset by sending aggregate to Clients
+            self.selected_client_responses = {}
+            self.broadcast(self.selected_clients_by_addr.keys(), agg)
+
+            # Retrieve CKS Shares from Clients (for collective key switching)
+            if STATUS.failed(self.get_responses()):
+                if debug_level >= DEBUG_LEVEL.INFO:
+                    TERM.write_warning('Time Limit Exceeded: Failed to receive CKS shares from all clients.')
+                return STATUS.FAILURE
+
+            # TODO: Check if what was actually received is a CKS Share
+
+            if debug_level >= DEBUG_LEVEL.INFO:
+                TERM.write_success("Successfully recieved CKS shares from all clients.")
+
+            # Perform collective key switching
+            cks_shares = list(self.selected_client_responses.values())
+            self.encrypter.col_key_switch(agg, cks_shares)
+
+            # Average the aggregate update
+            self.encrypter.average(len(cks_shares))
+
+            # Decrypted update
+            update = utils.list_to_state_dict(self.encrypter.decrypt(), self.trainer.model)
+
+        # Update Server model
+        self.trainer.update(update)
+
+        # TODO: Decompress Server model
+        
         return STATUS.SUCCESS
 
-    # Executes FL Training Loop
-    def loop(self):
-        while len(self.connected_clients_by_addr) > 0:
-            if STATUS.failed(self.setup()): continue
-            if STATUS.failed(self.train()): continue
-            if STATUS.failed(self.aggregate()): continue
-
-        if debug_level >= DEBUG_LEVEL.INFO:
-            TERM.write_failure("All clients disconected.")
+    ### Helper Functions ###
 
     # Randomly select subset of all client to train on
     # TODO: Customizable random selection
     def select_clients(self, subset_size):
         with self.client_lock:
+            # Sample Clients
             num_clients = len(self.connected_clients_by_addr)
             selected_client_addrs = sample(self.connected_clients_by_addr.keys(), min(subset_size, num_clients))
+            
+            # Cache selected Clients
             for addr in selected_client_addrs:
                 sock = self.connected_clients_by_addr[addr]
                 self.selected_clients_by_addr[addr] = sock
                 self.selected_clients_by_sock[sock] = addr
 
     # Retrieve responses of selected clients
-    def get_responses(self, timeout = 1000000):
+    def get_responses(self):
         self.selected_client_responses = {}
+
+        # Try for at most TIMEOUT seconds
         start = time.time()
 
         while time.time() - start < self.TIMEOUT:
-            # attempt to get a message from another client.
+            # Attempt to get a message from another client
             readable_clients_socks, _, _ = select.select(self.selected_clients_by_addr.values(), [], [])
+            
             for sock in readable_clients_socks:
                 self.selected_client_responses[self.selected_clients_by_sock[sock]] = Communication_Handler.recv_msg(sock)
+            
+            # All responses received
             if len(self.selected_client_responses) == len(self.selected_clients_by_addr):
                 return STATUS.SUCCESS
+        
         return STATUS.FAILURE
 
-    # Update server model (centralized model)
-    def update_model(self, aggregated_update):
-        self.trainer.update(aggregated_update)
 
-### Main Code ###
+### MAIN CODE ###
 
 BUFFER_TIME = 5
 

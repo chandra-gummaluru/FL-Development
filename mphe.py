@@ -1,8 +1,10 @@
 from ctypes import *
 import numpy as np
 
-### ctypes Structures + Exported Functions ###
+### ctypes Structures + Exported Functions from MPHE wrapper of Lattigo ###
 
+# NOTE: the .so file is OS dependent, so should have different versions
+# compiled for different systems using Cgo
 _so = cdll.LoadLibrary('./mphe/_mphe.so')
 
 class _Ldouble(Structure):
@@ -138,6 +140,7 @@ class Params:
         self.scale = _params.scale
         self.sigma = _params.sigma
     
+    # So we can send to Lattigo
     def make_structure(self):
         _params = _Params()
         
@@ -160,6 +163,7 @@ class Ciphertext:
         self.scale = _ct.scale
         self.isNTT = _ct.isNTT
     
+    # So we can send to Lattigo
     def make_structure(self):
         _ct = _Ciphertext()
 
@@ -175,6 +179,7 @@ class Ciphertext:
 
         return _ct
 
+# Server that has Multi-Party Homomorphic Encryption functionality
 class MPHEServer:
     def __init__(self):
         _server_ptr = _newMPHEServer()
@@ -256,6 +261,7 @@ class MPHEServer:
 
         print('Decrypted SERVER data:\n\t', dec_data)
 
+# Client that has Multi-Party Homomorphic Encryption functionality
 class MPHEClient:
     def __init__(self):
         _client_ptr = _newMPHEClient()
@@ -498,21 +504,20 @@ if __name__ == '__main__':
         crs = server.gen_crs()
 
         ct = encrypted_model[0].value
-        # print('Size:', len(encrypted_model), len(ct), len(ct[0]), len(ct[0][0]), ct[0][0][0])
 
         # Network Communication (1)
         encrypted_model = simulate_network_comm(encrypted_model)
         crs = simulate_network_comm(crs)
 
-        ## Clients decrypt + train ##
+        ## Clients intialize current encryption ##
 
         client1.crs = crs
         client2.crs = crs
 
-        ## Collective Key Generation ##
-
         client1.gen_key()
         client2.gen_key()
+
+        ## Collective Key Generation ##
 
         ckg_shares = []
         ckg_shares.append(client1.gen_ckg_share())
@@ -526,13 +531,15 @@ if __name__ == '__main__':
         # Network Communication (3)
         cpk = simulate_network_comm(cpk)
 
-        ## Clients send encrypted updates to Server (TRAIN) ##
+        ## Clients Decrypt + Train ##
 
         client1.data = client1.decrypt(encrypted_model)
         client2.data = client2.decrypt(encrypted_model)
 
         client1.data = (np.array(client1.data) + client1.update).tolist()
         client2.data = (np.array(client2.data) + client2.update).tolist()
+
+        ## Clients send encrypted updates to Server ##
 
         updates = []
         updates.append(client1.encrypt(cpk, client1.data))
