@@ -53,12 +53,12 @@ class Client():
 
 # Handles FL Client training loop logic
 class FLClient(Client):
-    def __init__(self, server, trainer):
+    def __init__(self, server, trainer, cipher=None):
         super(FLClient, self).__init__(server)
 
         # Training Program (specific to the model being trained)
         self.trainer = trainer
-        self.encrypter = mphe.MPHEClient()
+        self.cipher = cipher
         self.cpk = None
         self.TIMEOUT = float('inf')
 
@@ -83,23 +83,23 @@ class FLClient(Client):
 
         # TODO: Acknowledge selection by the Server
 
-        if self.encrypter is not None:
+        if self.cipher is not None:
             # Cache security parameters from the Server
             security_params = self.wait_for_response()
             params, secret_key, crs = security_params
 
             # TODO: Check if what was actually received is a set of security parameters
 
-            self.encrypter.define_scheme(params, secret_key)
-            self.encrypter.crs = crs
+            self.cipher.define_scheme(params, secret_key)
+            self.cipher.crs = crs
 
             # Send CKG Share to the Server (for collective public key generation)
-            self.encrypter.gen_key()
+            self.cipher.gen_key()
 
             if debug_level >= DEBUG_LEVEL.INFO:
                 TERM.write_info('Sending CKG share to server...')
 
-            Communication_Handler.send_msg(self.sock, self.encrypter.gen_ckg_share())
+            Communication_Handler.send_msg(self.sock, self.cipher.gen_ckg_share())
 
             # Cache collective public key
             self.cpk = self.wait_for_response()
@@ -147,9 +147,9 @@ class FLClient(Client):
         # TODO: Compress update
 
         # Encrypt update
-        if self.encrypter is not None:
+        if self.cipher is not None:
             flat_update = utils.state_dict_to_list(focused_update)
-            focused_update = self.encrypter.encrypt(self.cpk, flat_update)
+            focused_update = self.cipher.encrypt(self.cpk, flat_update)
         
         # Send update to the Server
         Communication_Handler.send_msg(self.sock, focused_update)
@@ -158,7 +158,7 @@ class FLClient(Client):
             TERM.write_success("Update sent.")
 
         # Reset encryption scheme
-        if self.encrypter is not None:
+        if self.cipher is not None:
             # Retrieve aggregate from the Server that we want to key switch
             if debug_level >= DEBUG_LEVEL.INFO:
                 TERM.write_info("Waiting for aggregate update...")
@@ -172,7 +172,7 @@ class FLClient(Client):
                 TERM.write_success("Successfully recieved aggregate update.")
                 TERM.write_info('Sending CKS share...')
 
-            cks_share = self.encrypter.gen_cks_share(aggregate_update)
+            cks_share = self.cipher.gen_cks_share(aggregate_update)
             Communication_Handler.send_msg(self.sock, cks_share)
 
             if debug_level >= DEBUG_LEVEL.INFO:
@@ -204,5 +204,5 @@ if __name__ == '__main__':
     nums = [[3, 5, 7, 9], [0, 1, 8], [2, 4, 6]]
 
     # Instantiate FL client with Training program
-    client = FLClient(SERVER, client_trainer.ClientTrainer(nums[idx]))
+    client = FLClient(SERVER, client_trainer.ClientTrainer(nums[idx]), cipher=mphe.MPHEClient())
     client.connect(5)

@@ -70,7 +70,7 @@ class Server():
                 Communication_Handler.send_msg(self.connected_clients_by_addr[client_addr], msg)
 
 class FLServer(Server):
-    def __init__(self, host, trainer):
+    def __init__(self, host, trainer, cipher=None):
         super(FLServer, self).__init__(host)
 
         # Client selected for FL.
@@ -88,7 +88,7 @@ class FLServer(Server):
         self.subset_size = 3 # Default
 
         # Encryption module
-        self.encrypter = mphe.MPHEServer()
+        self.cipher = cipher
 
         # Timeout.
         self.TIMEOUT = float('inf')
@@ -120,12 +120,14 @@ class FLServer(Server):
 
         if debug_level >= DEBUG_LEVEL.INFO:
             TERM.write_success('Successfuly selected clients.')
-            TERM.write_info("Requesting CKG shares...")
         
         # Establish encryption scheme between all parties
-        if self.encrypter is not None:
+        if self.cipher is not None:
+            if debug_level >= DEBUG_LEVEL.INFO:
+                TERM.write_info("Requesting CKG shares...")
+
             # Send the security parameters to all clients
-            security_params = (self.encrypter.params, self.encrypter.secret_key, self.encrypter.gen_crs())
+            security_params = (self.cipher.params, self.cipher.secret_key, self.cipher.gen_crs())
             self.broadcast(self.selected_clients_by_addr.keys(), security_params)
 
             # Receive CKG Shares from Clients (for collective public key generation)
@@ -141,7 +143,7 @@ class FLServer(Server):
                 TERM.write_info("Performing CKG...")
 
             # Distribute collective public key (for Encryption)
-            cpk = self.encrypter.col_key_gen(list(self.selected_client_responses.values()))
+            cpk = self.cipher.col_key_gen(list(self.selected_client_responses.values()))
             
             self.selected_client_responses = {}
             self.broadcast(self.selected_clients_by_addr.keys(), cpk)
@@ -180,15 +182,18 @@ class FLServer(Server):
         
         updates = list(self.selected_client_responses.values())
 
-        if self.encrypter is None:
+        if debug_level >= DEBUG_LEVEL.INFO:
+            TERM.write_info("Aggregating updates...")
+
+        if self.cipher is None:
             # Aggregate Client updates
             update = self.trainer.aggregate(updates)
+
+            if debug_level >= DEBUG_LEVEL.INFO:
+                TERM.write_success("Successfully aggregated updates.")
         else:
             # Aggregate encrypted Client updates
-            if debug_level >= DEBUG_LEVEL.INFO:
-                TERM.write_info("Aggregating updates...")
-            
-            agg = self.encrypter.aggregate(updates)
+            agg = self.cipher.aggregate(updates)
 
             if debug_level >= DEBUG_LEVEL.INFO:
                 TERM.write_success("Successfully aggregated updates.")
@@ -211,13 +216,13 @@ class FLServer(Server):
 
             # Perform collective key switching
             cks_shares = list(self.selected_client_responses.values())
-            self.encrypter.col_key_switch(agg, cks_shares)
+            self.cipher.col_key_switch(agg, cks_shares)
 
             # Average the aggregate update
-            self.encrypter.average(len(cks_shares))
+            self.cipher.average(len(cks_shares))
 
             # Decrypted update
-            update = utils.list_to_state_dict(self.encrypter.decrypt(), self.trainer.model)
+            update = utils.list_to_state_dict(self.cipher.decrypt(), self.trainer.model)
 
         # Update Server model
         self.trainer.update(update)
@@ -273,7 +278,7 @@ if __name__ == '__main__':
     server_port = 8080
 
     # Initialize the FL server.
-    flServer = FLServer((server_hostname, server_port),  server_trainer.ServerTrainer())
+    flServer = FLServer((server_hostname, server_port),  server_trainer.ServerTrainer(), cipher=mphe.MPHEServer())
 
     # Allow client to connect
     flServer.start()
