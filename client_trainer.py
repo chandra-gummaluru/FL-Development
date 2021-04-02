@@ -16,6 +16,8 @@ import numpy as np
 import utils
 from utils import DEBUG_LEVEL, TERM
 
+import proximal
+
 debug_level = DEBUG_LEVEL.INFO
 torch.manual_seed(utils.SEED)
 
@@ -26,6 +28,11 @@ class ClientTrainer():
         self.lr = 1e-3
         self.momentum = 0.9
         self.batch_size = 164    #4
+        
+        # FedProx
+        self.global_model = model1.Net()
+        self.prox_term = proximal.proximal_term
+        self.mu = 0.08
 
         # EXTRA: Cache digits part of this client's dataset
         self.digits = local_client_digits
@@ -59,6 +66,7 @@ class ClientTrainer():
     # Load weights from server model
     def load_weights(self, weights):
         self.model.load_state_dict(weights)
+        self.global_model.load_state_dict(weights)
 
     # Compute focused update to send
     def focused_update(self):
@@ -83,7 +91,10 @@ class ClientTrainer():
 
                 # Forward Pass
                 outputs = self.model(inputs)
-                loss = criterion(outputs, targets)
+                if self.prox_term is None:
+                    loss = criterion(outputs, targets)
+                else:
+                    loss = criterion(outputs, targets) + self.prox_term(self.model, self.global_model, self.mu)
 
                 # Backward Pass
                 loss.backward()
