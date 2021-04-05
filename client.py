@@ -128,7 +128,7 @@ class FLClient(Client):
         # TODO: Decompress weights
 
         # Initialize Client model with Server's weights
-        self.trainer.model.load_state_dict(weights)
+        self.trainer.load_weights(weights)
 
         if debug_level >= DEBUG_LEVEL.INFO:
             TERM.write_success('Successfully recieved weights from the server.')

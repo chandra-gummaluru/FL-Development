@@ -32,7 +32,7 @@ class ClientTrainer():
         # FedProx
         self.global_model = model1.Net()
         self.prox_term = proximal.proximal_term
-        self.mu = 0.08
+        self.mu = 1.0
 
         # EXTRA: Cache digits part of this client's dataset
         self.digits = local_client_digits
