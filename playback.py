@@ -13,6 +13,8 @@ plt.rcParams['font.serif'] = ['Palatino']
 class Playback:
     def __init__(self, path, interval):
         self.figure = None
+        self.anim = None
+        self.running = False
         self.digits = []
 
         # Cache animation interval
@@ -28,9 +30,23 @@ class Playback:
             for row in reader:
                 self.data.append(row)
 
+    def onClick(self, event):
+        if self.running:
+            self.anim.event_source.stop()
+            self.running = False
+            print('Paused. Click to start!')
+        else:
+            self.anim.event_source.start()
+            self.running = True
+            print('Started animation')
+
     def animate_server(self):
         self.figure = plt.figure()
-        anim = FuncAnimation(plt.gcf(), self.plot_server, interval=self.interval)
+
+        self.figure.canvas.mpl_connect('button_press_event', self.onClick)
+        self.running = True
+
+        self.anim = FuncAnimation(plt.gcf(), self.plot_server, interval=self.interval)
         plt.show()
     
     def plot_server(self, i):
@@ -64,7 +80,12 @@ class Playback:
         self.digits = tuple(digits)
 
         self.figure = plt.figure()
-        anim = FuncAnimation(plt.gcf(), self.plot_client, interval=self.interval)
+
+        self.figure.canvas.mpl_connect('button_press_event', self.onClick)
+        self.running = True
+
+        self.anim = FuncAnimation(plt.gcf(), self.plot_client, interval=self.interval)
+        self.running = True
         plt.show()
     
     def plot_client(self, i):
@@ -76,11 +97,7 @@ class Playback:
             return
 
         # Plot data
-        for c in range(data.shape[1]):
-            if c in self.digits:
-                plt.plot(range(num_pts), data[:, c] * 100)
-            else:
-                plt.plot(range(num_pts), data[:, c] * 100, linewidth=1.0)
+        plt.plot(range(num_pts), data * 100)
 
         # Format plot
         plt.title(r'\textbf{Client} ' + '{0}: Per Class Accuracy over Time'.format(self.digits), fontsize=14)
