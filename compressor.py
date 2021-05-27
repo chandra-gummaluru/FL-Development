@@ -1,6 +1,7 @@
 import torch
 import numpy as np
 import utils
+from math import prod
 
 # NOTE: this compressor class only serves as a proof of concept. In particular,
 # it mimics compression by setting a fixed percentage of the model weights to 
@@ -40,3 +41,75 @@ class Compressor:
         # Restore cuda
         if torch.cuda.is_available() and use_cuda:
           model = model.cuda()
+
+
+class CompressedModel:
+
+    def __init__(self, model, seed, dropout=0.01):
+        self.values = []
+        self.layers = []
+        self.metadata = {}  # (start, end) indices in compressed list
+        self.shape = {}     # shape of tensor
+        self.seed = seed
+        self.dropout = dropout
+
+        # Compress
+        model = model.cpu()
+
+        # Use the specified seed (to recover the relevant indices)
+        rng = np.random.default_rng(seed)
+        
+        # Iterate through the state dictionary of the model
+        for name, params in model.state_dict().items():
+            self.layers.append(name)
+            self.metadata[name] = {}
+            
+            weights = np.array(params.cpu())
+            self.metadata[name]['shape'] = weights.shape
+
+            weights = weights.flatten()
+
+            start_idx = len(self.values)
+
+            # Compress the weights only
+            if 'bias' not in name:
+                # Select indices to "randomly" keep
+                indices = rng.choice(np.arange(weights.size), replace=False, size=int(weights.size * (1.0 - dropout)))
+                # Keep those indices
+                self.values.extend(weights[indices].tolist())
+            else:
+                self.values.extend(weights.tolist())
+
+            end_idx = len(self.values)
+            self.metadata[name]['indices'] = (start_idx, end_idx)
+        
+    def reconstruct(self):
+        state_dict = {}
+
+        # Use the specified seed (to recover the relevant indices)
+        rng = np.random.default_rng(self.seed)
+
+        for name in self.layers:
+            # Retrieve compressed weights
+            start, end = self.metadata[name]['indices']
+            shape = self.metadata[name]['shape']
+            numel = prod(shape)
+
+            comp_weights = self.values[start:end]
+
+            if 'bias' not in name:
+                # Generate indices list
+                indices = rng.choice(np.arange(numel), replace=False, size=int(numel * (1.0 - self.dropout)))
+            
+                # Populate non-zero weights
+                weights = np.zeros(numel, dtype=np.float64)
+                weights[indices] = comp_weights
+            else:
+                weights = np.array(comp_weights)
+            
+            # Reshape
+            weights = weights.reshape(shape)
+
+            state_dict[name] = torch.from_numpy(weights)
+        
+        return state_dict

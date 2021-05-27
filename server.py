@@ -5,7 +5,7 @@ import utils
 from utils import DEBUG_LEVEL, TERM, STATUS, Communication_Handler
 
 import mphe
-from compressor import Compressor
+from compressor import Compressor, CompressedModel
 import server_trainer
 
 debug_level = DEBUG_LEVEL.INFO
@@ -174,6 +174,8 @@ class FLServer(Server):
         # Broadcast Server model to Clients
         if debug_level >= DEBUG_LEVEL.INFO:
             TERM.write_info("Broadcasting model and requesting updates...")
+        
+        # TODO: encrypt
 
         self.selected_client_responses = {}
         self.broadcast(self.selected_clients_by_addr.keys(), self.trainer.model.state_dict())

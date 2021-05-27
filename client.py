@@ -125,6 +125,8 @@ class FLClient(Client):
         # Receive Server model weights
         weights = self.wait_for_response()
 
+        # TODO: decrypt
+
         # TODO: Decompress weights
 
         # Initialize Client model with Server's weights
