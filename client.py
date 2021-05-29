@@ -1,18 +1,14 @@
 import time, sys, multiprocessing, errno, socket, random
 
 import utils
-from utils import DEBUG_LEVEL, STATUS, TERM, Communication_Handler
+from utils import DEBUG_LEVEL, STATUS, TERM, Communication_Handler, NetworkModel
 
 import mphe
-from compressor import Compressor
+from compressor import CompressedModel
 import client_trainer
 
 debug_level = DEBUG_LEVEL.INFO
 
-# NOTE: Seed for determining compression dropout indices. This seed serves simulation
-# purposes only. In theory, a completed Federated Dropout compression scheme would
-# send the relevant seed to each client over the network at each round.
-RANDOM = random.Random(utils.SEED)
 
 class Client():
     def __init__(self, server, name = None):
@@ -58,13 +54,15 @@ class Client():
 
 # Handles FL Client training loop logic
 class FLClient(Client):
-    def __init__(self, server, trainer, cipher=None):
+    def __init__(self, server, trainer, cipher=None, compressor=NetworkModel):
         super(FLClient, self).__init__(server)
 
         # Training Program (specific to the model being trained)
         self.trainer = trainer
         self.cipher = cipher
+        self.compressor = compressor
         self.cpk = None
+        self.seed = 0
         self.TIMEOUT = float('inf')
 
     ### FL Training Loop ###
@@ -122,14 +120,16 @@ class FLClient(Client):
         if debug_level >= DEBUG_LEVEL.INFO:
             TERM.write_info('Waiting for weights from server...')
 
-        # Receive Server model weights
-        weights = self.wait_for_response()
+        # Receive the (compressed) weights from the server
+        cweights = self.wait_for_response()
 
-        # TODO: decrypt
+        # Decrypt
+        cweights.values = self.cipher.decrypt(cweights.values)
 
-        # TODO: Decompress weights
+        # Reconstruct the weights
+        weights = cweights.reconstruct()
 
-        # Initialize Client model with Server's weights
+        # Initialize the local model with Server's weights
         self.trainer.load_weights(weights)
 
         if debug_level >= DEBUG_LEVEL.INFO:
@@ -148,25 +148,26 @@ class FLClient(Client):
     def update(self):
         focused_update = self.trainer.focused_update()
 
-        # TODO: Compress update
+        # Compress update
         # NOTE: the following simulates compression by setting a fraction of
         # the model weights to zero but sends the full model nonetheless.
         if debug_level >= DEBUG_LEVEL.INFO:
-            TERM.write_info("Simulate Compression!")
+            TERM.write_info("Compression!")
         
-        zeros_seed = RANDOM.randint(0, utils.SEED)
-        Compressor.dropout_weights(self.trainer.model, zeros_seed)
+        # Generate a compressed model
+        rng = random.Random(self.seed)   # NOTE: Used to synchronize compression between all clients
+        zeros_seed = rng.randint(0, utils.SEED)
+        cmodel = self.compressor(zeros_seed).compress(focused_update)
 
         # Encrypt update
         if self.cipher is not None:
-            flat_update = utils.state_dict_to_list(focused_update)
-            focused_update = self.cipher.encrypt(self.cpk, flat_update)
+            cmodel.values = self.cipher.encrypt(self.cpk, cmodel.values)
         
         if debug_level >= DEBUG_LEVEL.INFO:
             TERM.write_info("Sending update to server...")
 
         # Send update to the Server
-        Communication_Handler.send_msg(self.sock, focused_update)
+        Communication_Handler.send_msg(self.sock, cmodel)
 
         if debug_level >= DEBUG_LEVEL.INFO:
             TERM.write_success("Update sent.")
@@ -218,5 +219,5 @@ if __name__ == '__main__':
     nums = [[3, 5, 7, 9], [0, 1, 8], [2, 4, 6]]
 
     # Instantiate FL client with Training program
-    client = FLClient(SERVER, client_trainer.ClientTrainer(nums[idx]), cipher=mphe.MPHEClient())
+    client = FLClient(SERVER, client_trainer.ClientTrainer(nums[idx]), cipher=mphe.MPHEClient(), compressor=CompressedModel)
     client.connect(5)

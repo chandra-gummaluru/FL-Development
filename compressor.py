@@ -1,71 +1,34 @@
 import torch
 import numpy as np
+
 import utils
+from utils import NetworkModel
+
 from math import prod
 
-# NOTE: this compressor class only serves as a proof of concept. In particular,
-# it mimics compression by setting a fixed percentage of the model weights to 
-# zero. Nonetheless, our Clients and Server are sending the entire model now with
-# just some weights set to zero, and thus no actual compression is acheived. To
-# achieve actual compression of data, one needs to convert the model to a list of
-# floats (weights), drop the zero terms and thus send the smaller (compressed) list
-# as well as a seed that allows us to recover the indices where weights were dropped.
-# NOTE: An actual compression scheme based on Federated Dropout should follow or
-# should be documented in a README or Github Wiki.
-class Compressor:
-    # NOTE: dropout = 1 - sqrt(1 - net dropout) --> net dropout = 2*dropout - dropout^2
-    # This is because dropout occurs on the client and then server (twice) before the next round of weights is received
-    def dropout_weights(model, seed, dropout=0.01, use_cuda=True):
-        # Use the specified seed (to recover the relevant indices)
-        # np.random.seed(seed)
-        rng = np.random.default_rng(seed)
+"""
+NOTE: This compressor class uses Federated Dropout, one possible
+implementation of compression. See the GitHub Wiki for instructions
+on implementing a custom compressor.
+"""
+class CompressedModel(NetworkModel):
+
+    def __init__(self, seed=0):
+        super(CompressedModel, self).__init__(seed)
         
-        model = model.cpu()
-        state_dict = {}
-
-        # Iterate through the state dictionary of the model
-        for name, params in model.state_dict().items():
-            # Compress the weights only
-            if 'bias' not in name:
-                weights = np.array(params.cpu()).flatten()
-
-                # Select indices to "randomly" zero-out
-                indices = rng.choice(np.arange(weights.size), replace=False, size=int(weights.size * dropout))
-                weights[indices] = 0
-                state_dict[name] = torch.tensor(weights.reshape(params.shape))
-            else:
-                state_dict[name] = params
-        
-        model.load_state_dict(state_dict)
-        
-        # Restore cuda
-        if torch.cuda.is_available() and use_cuda:
-          model = model.cuda()
-
-
-class CompressedModel:
-
-    def __init__(self, model, seed, dropout=0.01):
-        self.values = []
-        self.layers = []
-        self.metadata = {}  # (start, end) indices in compressed list
-        self.shape = {}     # shape of tensor
-        self.seed = seed
-        self.dropout = dropout
-
-        # Compress
-        model = model.cpu()
+    def compress(self, state_dict, dropout=0.01):
+        self.metadata['dropout'] = dropout
 
         # Use the specified seed (to recover the relevant indices)
-        rng = np.random.default_rng(seed)
+        rng = np.random.default_rng(self.seed)
         
         # Iterate through the state dictionary of the model
-        for name, params in model.state_dict().items():
+        for name, params in state_dict.items():
             self.layers.append(name)
-            self.metadata[name] = {}
+            self.metadata['layer'][name] = {}
             
             weights = np.array(params.cpu())
-            self.metadata[name]['shape'] = weights.shape
+            self.metadata['layer'][name]['shape'] = weights.shape
 
             weights = weights.flatten()
 
@@ -81,8 +44,10 @@ class CompressedModel:
                 self.values.extend(weights.tolist())
 
             end_idx = len(self.values)
-            self.metadata[name]['indices'] = (start_idx, end_idx)
+            self.metadata['layer'][name]['indices'] = (start_idx, end_idx)
         
+        return self
+
     def reconstruct(self):
         state_dict = {}
 
@@ -91,15 +56,15 @@ class CompressedModel:
 
         for name in self.layers:
             # Retrieve compressed weights
-            start, end = self.metadata[name]['indices']
-            shape = self.metadata[name]['shape']
+            start, end = self.metadata['layer'][name]['indices']
+            shape = self.metadata['layer'][name]['shape']
             numel = prod(shape)
 
             comp_weights = self.values[start:end]
 
             if 'bias' not in name:
                 # Generate indices list
-                indices = rng.choice(np.arange(numel), replace=False, size=int(numel * (1.0 - self.dropout)))
+                indices = rng.choice(np.arange(numel), replace=False, size=int(numel * (1.0 - self.metadata['dropout'])))
             
                 # Populate non-zero weights
                 weights = np.zeros(numel, dtype=np.float64)

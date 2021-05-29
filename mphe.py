@@ -198,6 +198,8 @@ class MPHEServer:
         enc_data = _encryptFromSk(byref(params), byref(sk), data_ptr, len(data))
 
         self.data = _Conversion.from_data(enc_data.contents)
+
+        return self.data
     
     def decrypt(self):
         params = self.params.make_structure()

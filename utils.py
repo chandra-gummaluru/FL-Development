@@ -1,6 +1,7 @@
 import time, sys, threading, errno, socket, pickle, math, struct
 import numpy as np
 import torch
+from math import prod
 
 class STATUS:
     SUCCESS = 0
@@ -86,37 +87,52 @@ class Communication_Handler():
             TERM.write_failure('Peer {}: Receive error {}'.format('blah', sys.exc_info()[0]))
             return None
 
-### Conversion between list and state_dict ###
+class NetworkModel:
+    def __init__(self, seed=0):
+        # names of the layers
+        self.layers = []
 
-def list_to_state_dict(flat, model):
-    # Initialize variables
-    state_dict = {}
-    flat_np = np.array(flat)
-
-    # Populate weights for each layer
-    last_idx = 0
-
-    for layer, weights in model.state_dict().items():
-        # Retrieve reshaping parameters
-        shape, numel = weights.shape, torch.numel(weights)
+        # flattened weights of the model
+        self.values = []
         
-        # Slice and reshape weights for the current layer
-        array = (flat_np[last_idx:(last_idx + numel)]).reshape(shape)
-        state_dict[layer] = torch.from_numpy(array)
+        # seed
+        self.seed = seed
 
-        # Move to next slice
-        last_idx += numel
-    
-    return state_dict
+        # mapping from linear array to tensors
+        self.metadata = { 'layer': {} }
+        
+    def compress(self, state_dict):
+        # Iterate through the state dictionary of the model
+        for name, params in state_dict.items():
+            self.layers.append(name)
+            self.metadata['layer'][name] = {}
+            
+            weights = np.array(params.cpu())
 
-def state_dict_to_list(state_dict):
-    flat = np.array([])
+            self.metadata['layer'][name]['indices'] = len(self.values)
+            self.metadata['layer'][name]['shape'] = weights.shape
 
-    # Copy and flatten weights
-    for layer, weights in state_dict.items():
-        flat = np.concatenate((flat, weights.numpy().flatten()))
-    
-    return flat.flatten().tolist()
+            weights = weights.flatten()
+            self.values.extend(weights.tolist())
+
+        return self
+
+    def reconstruct(self):
+        state_dict = {}
+
+        for name in self.layers:
+            # Retrieve weights
+            idx = self.metadata['layer'][name]['indices']
+            shape = self.metadata['layer'][name]['shape']
+            numel = prod(shape)
+
+            # Get the weights for the current layer and reshaped appropriately
+            weights = np.array(self.values[idx:idx+numel]).reshape(shape)
+
+            state_dict[name] = torch.from_numpy(weights)
+        
+        return state_dict
+
 
 # Seed for reproducibility
 SEED = 2020204

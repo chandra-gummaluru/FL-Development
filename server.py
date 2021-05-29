@@ -2,11 +2,12 @@ import time, sys, threading, errno, socket, queue, pickle, random, select
 from random import sample
 
 import utils
-from utils import DEBUG_LEVEL, TERM, STATUS, Communication_Handler
+from utils import DEBUG_LEVEL, TERM, STATUS, Communication_Handler, NetworkModel
 
 import mphe
-from compressor import Compressor, CompressedModel
+from compressor import CompressedModel
 import server_trainer
+
 
 debug_level = DEBUG_LEVEL.INFO
 
@@ -76,7 +77,7 @@ class Server():
                 Communication_Handler.send_msg(self.connected_clients_by_addr[client_addr], msg)
 
 class FLServer(Server):
-    def __init__(self, host, trainer, cipher=None):
+    def __init__(self, host, trainer, cipher=None, compressor=NetworkModel):
         super(FLServer, self).__init__(host)
 
         # Client selected for FL.
@@ -95,6 +96,11 @@ class FLServer(Server):
 
         # Encryption module
         self.cipher = cipher
+
+        # Compression module
+        self.compressor = compressor
+
+        self.seed = utils.SEED
 
         # Timeout.
         self.TIMEOUT = float('inf')
@@ -162,23 +168,26 @@ class FLServer(Server):
     # Compress and Send Model + Wait for Client Updates
     # NOTE: in theory server should send encrypted model weights, but for now it does not
     def train(self):
-        # TODO: Compress model
+        # Compress model
         # NOTE: the following simulates compression by setting a fraction of
         # the model weights to zero but sends the full model nonetheless.
         if debug_level >= DEBUG_LEVEL.INFO:
-            TERM.write_info("Simulate Compression!")
+            TERM.write_info("Compression!")
         
+        # Generate a compressed model
         zeros_seed = RANDOM.randint(0, utils.SEED)
-        Compressor.dropout_weights(self.trainer.model, zeros_seed)
+        cmodel = self.compressor(zeros_seed).compress(self.trainer.model.cpu().state_dict())
 
         # Broadcast Server model to Clients
         if debug_level >= DEBUG_LEVEL.INFO:
             TERM.write_info("Broadcasting model and requesting updates...")
         
-        # TODO: encrypt
-
+        # Encrypt
+        if self.cipher is not None:
+            cmodel.values = self.cipher.encrypt(cmodel.values)
+        
         self.selected_client_responses = {}
-        self.broadcast(self.selected_clients_by_addr.keys(), self.trainer.model.state_dict())
+        self.broadcast(self.selected_clients_by_addr.keys(), cmodel)
 
         # Wait until Clients complete training and Server receives updates
         if STATUS.failed(self.get_responses()):
@@ -196,19 +205,20 @@ class FLServer(Server):
         # ASSUME: Client updates can be decompressed post-aggregation
         
         updates = list(self.selected_client_responses.values())
+        update_values = [update.values for update in updates]
 
         if debug_level >= DEBUG_LEVEL.INFO:
             TERM.write_info("Aggregating updates...")
 
         if self.cipher is None:
             # Aggregate Client updates
-            update = self.trainer.aggregate(updates)
+            update = self.trainer.aggregate(update_values)
 
             if debug_level >= DEBUG_LEVEL.INFO:
                 TERM.write_success("Successfully aggregated updates.")
         else:
             # Aggregate encrypted Client updates
-            agg = self.cipher.aggregate(updates)
+            agg = self.cipher.aggregate(update_values)
 
             if debug_level >= DEBUG_LEVEL.INFO:
                 TERM.write_success("Successfully aggregated updates.")
@@ -237,12 +247,14 @@ class FLServer(Server):
             self.cipher.average(len(cks_shares))
 
             # Decrypted update
-            update = utils.list_to_state_dict(self.cipher.decrypt(), self.trainer.model)
+            update = updates[0]
+            update.values = self.cipher.decrypt()
+
+        # Decompress Server model
+        update = update.reconstruct()
 
         # Update Server model
         self.trainer.update(update)
-
-        # TODO: Decompress Server model
         
         return STATUS.SUCCESS
 
@@ -293,7 +305,7 @@ if __name__ == '__main__':
     server_port = 8080
 
     # Initialize the FL server.
-    flServer = FLServer((server_hostname, server_port),  server_trainer.ServerTrainer(), cipher=mphe.MPHEServer())
+    flServer = FLServer((server_hostname, server_port),  server_trainer.ServerTrainer(), cipher=mphe.MPHEServer(), compressor=CompressedModel)
 
     # Allow client to connect
     flServer.start()
