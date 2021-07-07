@@ -16,7 +16,10 @@ import numpy as np
 import utils
 from utils import DEBUG_LEVEL, TERM
 
+import proximal
+
 debug_level = DEBUG_LEVEL.INFO
+torch.manual_seed(utils.SEED)
 
 class ClientTrainer():
     def __init__(self, local_client_digits, use_cuda=True):
@@ -25,6 +28,11 @@ class ClientTrainer():
         self.lr = 1e-3
         self.momentum = 0.9
         self.batch_size = 164    #4
+        
+        # FedProx
+        self.global_model = model1.Net()
+        self.prox_term = proximal.proximal_term
+        self.mu = 1.0
 
         # EXTRA: Cache digits part of this client's dataset
         self.digits = local_client_digits
@@ -58,11 +66,13 @@ class ClientTrainer():
     # Load weights from server model
     def load_weights(self, weights):
         self.model.load_state_dict(weights)
+        self.global_model.load_state_dict(weights)
 
     # Compute focused update to send
     def focused_update(self):
         return self.model.state_dict()
-
+    
+    # Train model on local dataset
     def train(self):
         # Optimization Settings
         criterion = nn.CrossEntropyLoss()
@@ -81,7 +91,10 @@ class ClientTrainer():
 
                 # Forward Pass
                 outputs = self.model(inputs)
-                loss = criterion(outputs, targets)
+                if self.prox_term is None:
+                    loss = criterion(outputs, targets)
+                else:
+                    loss = criterion(outputs, targets) + self.prox_term(self.model, self.global_model, self.mu)
 
                 # Backward Pass
                 loss.backward()
@@ -104,6 +117,7 @@ class ClientTrainer():
             with open('./train_curves/Client{}.csv'.format(self.digits), 'a', newline='') as csv_file:
                 writer = csv.writer(csv_file)
                 writer.writerow(test_acc_list)
+        
         end = time.time()
 
         if debug_level >= DEBUG_LEVEL.INFO:
@@ -147,13 +161,16 @@ class ClientTrainer():
         return (correct_by_class / total_by_class).cpu().tolist(), float(acc.cpu())
 
 
-# TEST
-if __name__ == '__main__':
+### TEST ###
 
+if __name__ == '__main__':
     trainer = ClientTrainer([1, 2, 3], use_cuda=True)
+
     trainer.load_weights(trainer.model.state_dict())
     TERM.write('Weights loaded successfully!')
 
     trainer.train()
     TERM.write('Model trained successfully!')
+
+    trainer.focused_update()
     TERM.write('Focused update computed successfully!')

@@ -10,6 +10,7 @@ import utils
 from utils import DEBUG_LEVEL, TERM
 
 debug_level = DEBUG_LEVEL.INFO
+torch.manual_seed(utils.SEED)
 
 import sys, csv
 
@@ -24,6 +25,7 @@ class ServerTrainer():
         # Test Data
         self.test_loader = self.load_test_data()
         self.test_acc = [ ['0', '1', '2', '3', '4', '5', '6', '7', '8', '9'] ]
+        self.csv_save_path = './train_curves/Server.csv'
 
         # Enable CUDA
         self.use_cuda = use_cuda
@@ -60,7 +62,7 @@ class ServerTrainer():
             TERM.write('\tClass Accuracies: {}'.format(100 * np.array(self.test_acc[-1])))
 
         # Occasionally save current test accuracy
-        self.save_to_csv(acc, './train_curves/Server.csv')
+        self.save_to_csv(acc, self.csv_save_path)
 
     ### Helper Functions ###
 

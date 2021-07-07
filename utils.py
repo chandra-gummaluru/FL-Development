@@ -1,4 +1,16 @@
 import time, sys, threading, errno, socket, pickle, math, struct
+import numpy as np
+import torch
+from math import prod
+
+class STATUS:
+    SUCCESS = 0
+    FAILURE = 1
+
+    def failed(expr):
+        return expr == STATUS.FAILURE
+    def success(expr):
+        return expr == STATUS.SUCCESS
 
 class DEBUG_LEVEL:
     NONE = 0
@@ -29,6 +41,7 @@ class TERM:
     def write_warning(msg):
         sys.stdout.write(TERM.WARNING + msg + TERM.ENDC + '\n')
 
+# Handles generic communication between parties
 class Communication_Handler():
 
     def sendall(sock, msg):
@@ -53,6 +66,8 @@ class Communication_Handler():
             smsg = struct.pack('>I', smsg_len) + smsg
             # send the message.
             Communication_Handler.sendall(sock, smsg)
+        except KeyboardInterrupt:
+            exit()
         except:
             TERM.write_failure('Peer {}: Send Error \'{}\''.format('blah', sys.exc_info()[0]))
             return
@@ -66,6 +81,58 @@ class Communication_Handler():
                 smsg = Communication_Handler.recvall(sock, msg_len)
                 msg = pickle.loads(smsg)
                 return msg
+        except KeyboardInterrupt:
+            exit()
         except:
             TERM.write_failure('Peer {}: Receive error {}'.format('blah', sys.exc_info()[0]))
             return None
+
+class NetworkModel:
+    def __init__(self, seed=0):
+        # names of the layers
+        self.layers = []
+
+        # flattened weights of the model
+        self.values = []
+        
+        # seed
+        self.seed = seed
+
+        # mapping from linear array to tensors
+        self.metadata = { 'layer': {} }
+        
+    def compress(self, state_dict):
+        # Iterate through the state dictionary of the model
+        for name, params in state_dict.items():
+            self.layers.append(name)
+            self.metadata['layer'][name] = {}
+            
+            weights = np.array(params.cpu())
+
+            self.metadata['layer'][name]['indices'] = len(self.values)
+            self.metadata['layer'][name]['shape'] = weights.shape
+
+            weights = weights.flatten()
+            self.values.extend(weights.tolist())
+
+        return self
+
+    def reconstruct(self):
+        state_dict = {}
+
+        for name in self.layers:
+            # Retrieve weights
+            idx = self.metadata['layer'][name]['indices']
+            shape = self.metadata['layer'][name]['shape']
+            numel = prod(shape)
+
+            # Get the weights for the current layer and reshaped appropriately
+            weights = np.array(self.values[idx:idx+numel]).reshape(shape)
+
+            state_dict[name] = torch.from_numpy(weights)
+        
+        return state_dict
+
+
+# Seed for reproducibility
+SEED = 2020204

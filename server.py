@@ -2,11 +2,19 @@ import time, sys, threading, errno, socket, queue, pickle, random, select
 from random import sample
 
 import utils
-from utils import DEBUG_LEVEL, TERM, Communication_Handler
+from utils import DEBUG_LEVEL, TERM, STATUS, Communication_Handler, NetworkModel
 
+import mphe
+from compressor import CompressedModel
 import server_trainer
 
+
 debug_level = DEBUG_LEVEL.INFO
+
+# NOTE: Seed for determining compression dropout indices. This seed serves simulation
+# purposes only. In theory, a completed Federated Dropout compression scheme would
+# send the relevant seed to each client over the network at each round.
+RANDOM = random.Random(utils.SEED)
 
 class Server():
     def __init__(self, host):
@@ -69,15 +77,14 @@ class Server():
                 Communication_Handler.send_msg(self.connected_clients_by_addr[client_addr], msg)
 
 class FLServer(Server):
-
-    def __init__(self, host, trainer):
+    def __init__(self, host, trainer, cipher=None, compressor=NetworkModel):
         super(FLServer, self).__init__(host)
 
         # Client selected for FL.
         self.selected_clients_by_addr = {}
         self.selected_clients_by_sock = {}
 
-        self.selected_clients_updates = {}
+        self.selected_client_responses = {}
 
         # Flags / Cache for FL loop
         self.aggregated_update = None # whether the current updates have been aggreated.
@@ -87,103 +94,208 @@ class FLServer(Server):
         self.trainer = trainer
         self.subset_size = 3 # Default
 
+        # Encryption module
+        self.cipher = cipher
+
+        # Compression module
+        self.compressor = compressor
+
+        self.seed = utils.SEED
+
         # Timeout.
-        self.TIMEOUT = 100000000000
+        self.TIMEOUT = float('inf')
 
-    # Executes FL Training Loop
-    def train(self):
+    ### FL Training Loop ###
+
+    # Main loop
+    def loop(self):
         while len(self.connected_clients_by_addr) > 0:
-            # select a subset of the clients and broadcast the model.
-            if debug_level >= DEBUG_LEVEL.INFO:
-                TERM.write_info("Selecting clients...")
+            # Select Clients + Establish Encryption Scheme
+            if STATUS.failed(self.setup()): continue
 
-            self.select_clients(self.subset_size)
+            # Compress and Send Model + Wait for Client Updates
+            if STATUS.failed(self.train()): continue
 
-            if debug_level >= DEBUG_LEVEL.INFO:
-                TERM.write_info("Broadcasting model...")
-
-            self.broadcast_model()
-
-            if debug_level >= DEBUG_LEVEL.INFO:
-                TERM.write_info("Waiting for updates...(Timeout: " + str(self.TIMEOUT) + ")")
-
-            start = time.time()
-
-            # wait for each client's update and then aggregate.
-            while (self.aggregated_update is None) and time.time() - start < self.TIMEOUT:
-                self.wait_for_updates()
-                self.attempt_to_aggregate_updates()
-
-            # if an aggregated update has been created...
-            if self.aggregated_update is not None:
-                # Stop communication (temporarily)
-                self.stop()
-
-                if debug_level >= DEBUG_LEVEL.INFO:
-                    TERM.write_success("All updates received.")
-                    TERM.write_info("Aggregating updates...")
-
-                # Update the model using aggregated update.
-                self.update_model(self.aggregated_update)
-                self.aggregated_update = None
-
-                # reset the selected client address list (to be re-selected)
-                self.selected_clients_by_addr = {}
-                self.selected_clients_updates = {}
-
-                if debug_level >= DEBUG_LEVEL.INFO:
-                    TERM.write_info("Sending aggregated update to clients...")
-
-                # Restart communication.
-                self.start()
-            else:
-                if debug_level >= DEBUG_LEVEL.INFO:
-                    TERM.write_warning("Time-limit exceeded: Some updates were not received.")
+            # Aggregate Client Updates + Reset Encryption Scheme + Decompress Model
+            if STATUS.failed(self.aggregate()): continue
 
         if debug_level >= DEBUG_LEVEL.INFO:
             TERM.write_failure("All clients disconected.")
 
-    ### FL Training Loop ###
+    # Select Clients + Establish Encryption Scheme
+    def setup(self):
+        # Select a subset of the clients
+        if debug_level >= DEBUG_LEVEL.INFO:
+            TERM.write_info("Selecting clients...")
+
+        self.select_clients(self.subset_size)
+
+        if debug_level >= DEBUG_LEVEL.INFO:
+            TERM.write_success('Successfuly selected clients.')
+        
+        # Establish encryption scheme between all parties
+        if self.cipher is not None:
+            if debug_level >= DEBUG_LEVEL.INFO:
+                TERM.write_info("Requesting CKG shares...")
+
+            # Send the security parameters to all clients
+            security_params = (self.cipher.params, self.cipher.secret_key, self.cipher.gen_crs())
+            self.broadcast(self.selected_clients_by_addr.keys(), security_params)
+
+            # Receive CKG Shares from Clients (for collective public key generation)
+            if STATUS.failed(self.get_responses()):
+                if debug_level >= DEBUG_LEVEL.INFO:
+                    TERM.write_warning('Time Limit Exceeded: Failed to receive CKG shares from all clients.')
+                return STATUS.FAILURE
+            
+            # TODO: Check if what was actually received is a CKG Share
+
+            if debug_level >= DEBUG_LEVEL.INFO:
+                TERM.write_success('Successfuly received CKG shares from all clients.')
+                TERM.write_info("Performing CKG...")
+
+            # Distribute collective public key (for Encryption)
+            cpk = self.cipher.col_key_gen(list(self.selected_client_responses.values()))
+            
+            self.selected_client_responses = {}
+            self.broadcast(self.selected_clients_by_addr.keys(), cpk)
+
+            if debug_level >= DEBUG_LEVEL.INFO:
+                TERM.write_success('Successfully performed CKG.')
+
+        return STATUS.SUCCESS
+
+    # Compress and Send Model + Wait for Client Updates
+    # NOTE: in theory server should send encrypted model weights, but for now it does not
+    def train(self):
+        # Compress model
+        # NOTE: the following simulates compression by setting a fraction of
+        # the model weights to zero but sends the full model nonetheless.
+        if debug_level >= DEBUG_LEVEL.INFO:
+            TERM.write_info("Compression!")
+        
+        # Generate a compressed model
+        zeros_seed = RANDOM.randint(0, utils.SEED)
+        cmodel = self.compressor(zeros_seed).compress(self.trainer.model.cpu().state_dict())
+
+        # Broadcast Server model to Clients
+        if debug_level >= DEBUG_LEVEL.INFO:
+            TERM.write_info("Broadcasting model and requesting updates...")
+        
+        # Encrypt
+        if self.cipher is not None:
+            cmodel.values = self.cipher.encrypt(cmodel.values)
+        
+        self.selected_client_responses = {}
+        self.broadcast(self.selected_clients_by_addr.keys(), cmodel)
+
+        # Wait until Clients complete training and Server receives updates
+        if STATUS.failed(self.get_responses()):
+            if debug_level >= DEBUG_LEVEL.INFO:
+                TERM.write_warning('Time Limit Exceeded: Failed to receive updates from all clients.')
+            return STATUS.FAILURE
+
+        if debug_level >= DEBUG_LEVEL.INFO:
+            TERM.write_success("Successfully recieved updates from all clients.")
+        
+        return STATUS.SUCCESS
+
+    # Aggregate Client Updates + Reset Encryption Scheme + Decompress Model
+    def aggregate(self):
+        # ASSUME: Client updates can be decompressed post-aggregation
+        
+        updates = list(self.selected_client_responses.values())
+        update_values = [update.values for update in updates]
+
+        if debug_level >= DEBUG_LEVEL.INFO:
+            TERM.write_info("Aggregating updates...")
+
+        if self.cipher is None:
+            # Aggregate Client updates
+            update = self.trainer.aggregate(update_values)
+
+            if debug_level >= DEBUG_LEVEL.INFO:
+                TERM.write_success("Successfully aggregated updates.")
+        else:
+            # Aggregate encrypted Client updates
+            agg = self.cipher.aggregate(update_values)
+
+            if debug_level >= DEBUG_LEVEL.INFO:
+                TERM.write_success("Successfully aggregated updates.")
+                TERM.write_info("Requesting CKS shares...")
+
+            # Commence encryption scheme reset by sending aggregate to Clients
+            self.selected_client_responses = {}
+            self.broadcast(self.selected_clients_by_addr.keys(), agg)
+
+            # Retrieve CKS Shares from Clients (for collective key switching)
+            if STATUS.failed(self.get_responses()):
+                if debug_level >= DEBUG_LEVEL.INFO:
+                    TERM.write_warning('Time Limit Exceeded: Failed to receive CKS shares from all clients.')
+                return STATUS.FAILURE
+
+            # TODO: Check if what was actually received is a CKS Share
+
+            if debug_level >= DEBUG_LEVEL.INFO:
+                TERM.write_success("Successfully recieved CKS shares from all clients.")
+
+            # Perform collective key switching
+            cks_shares = list(self.selected_client_responses.values())
+            self.cipher.col_key_switch(agg, cks_shares)
+
+            # Average the aggregate update
+            self.cipher.average(len(cks_shares))
+
+            # Decrypted update
+            update = updates[0]
+            update.values = self.cipher.decrypt()
+
+        # Decompress Server model
+        update = update.reconstruct()
+
+        # Update Server model
+        self.trainer.update(update)
+        
+        return STATUS.SUCCESS
+
+    ### Helper Functions ###
 
     # Randomly select subset of all client to train on
     # TODO: Customizable random selection
     def select_clients(self, subset_size):
         with self.client_lock:
+            # Sample Clients
             num_clients = len(self.connected_clients_by_addr)
             selected_client_addrs = sample(self.connected_clients_by_addr.keys(), min(subset_size, num_clients))
+            
+            # Cache selected Clients
             for addr in selected_client_addrs:
                 sock = self.connected_clients_by_addr[addr]
                 self.selected_clients_by_addr[addr] = sock
                 self.selected_clients_by_sock[sock] = addr
 
-    # Broadcast model to selected clients so they can train
-    def broadcast_model(self):
-        # Verify there are clients
-        if len(self.selected_clients_by_addr) > 0:
-            self.broadcast(self.selected_clients_by_addr.keys(), self.trainer.model.state_dict())
-            return True
+    # Retrieve responses of selected clients
+    def get_responses(self):
+        self.selected_client_responses = {}
 
-        return False
+        # Try for at most TIMEOUT seconds
+        start = time.time()
 
-    # Retrieve updates of selected clients
-    def wait_for_updates(self):
-        # attempt to get a message from more clients.
-        readable_clients_socks, _, _ = select.select(self.selected_clients_by_addr.values(), [], [])
-        for sock in readable_clients_socks:
-            self.selected_clients_updates[self.selected_clients_by_sock[sock]] = Communication_Handler.recv_msg(sock)
-    
-    # Aggregate Updates once the subset of selected clients are ready
-    def attempt_to_aggregate_updates(self):
-        # check if all clients have provided data.
-        if len(self.selected_clients_updates) == len(self.selected_clients_by_addr):
-            # Aggregate the updates.
-            self.aggregated_update = self.trainer.aggregate(self.selected_clients_updates.values())
+        while time.time() - start < self.TIMEOUT:
+            # Attempt to get a message from another client
+            readable_clients_socks, _, _ = select.select(self.selected_clients_by_addr.values(), [], [])
+            
+            for sock in readable_clients_socks:
+                self.selected_client_responses[self.selected_clients_by_sock[sock]] = Communication_Handler.recv_msg(sock)
+            
+            # All responses received
+            if len(self.selected_client_responses) == len(self.selected_clients_by_addr):
+                return STATUS.SUCCESS
+        
+        return STATUS.FAILURE
 
-    # Update server model (centralized model)
-    def update_model(self, aggregated_update):
-        self.trainer.update(aggregated_update)
 
-### Main Code ###
+### MAIN CODE ###
 
 BUFFER_TIME = 5
 
@@ -193,7 +305,7 @@ if __name__ == '__main__':
     server_port = 8080
 
     # Initialize the FL server.
-    flServer = FLServer((server_hostname, server_port),  server_trainer.ServerTrainer())
+    flServer = FLServer((server_hostname, server_port),  server_trainer.ServerTrainer(), cipher=mphe.MPHEServer(), compressor=CompressedModel)
 
     # Allow client to connect
     flServer.start()
@@ -208,4 +320,4 @@ if __name__ == '__main__':
         # Train the FL server model.
         TERM.write_warning('Time limit exceeded: ' + str(len(flServer.connected_clients_by_addr)) + ' client(s) connected.')
         TERM.write_info("Starting FL training loop...")
-        flServer.train()
+        flServer.loop()
